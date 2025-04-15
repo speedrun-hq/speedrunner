@@ -33,7 +33,7 @@ func (s *Server) Start() {
 	// Health check endpoint
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 
 	// Readiness check
@@ -42,12 +42,12 @@ func (s *Server) Start() {
 		for chainID, config := range s.chains {
 			if config.Client == nil {
 				w.WriteHeader(http.StatusServiceUnavailable)
-				w.Write([]byte(fmt.Sprintf("Chain %d client not connected", chainID)))
+				_, _ = w.Write([]byte(fmt.Sprintf("Chain %d client not connected", chainID)))
 				return
 			}
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("Ready"))
+		_, _ = w.Write([]byte("Ready"))
 	})
 
 	// Chain status endpoint
@@ -79,7 +79,9 @@ func (s *Server) Start() {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(status)
+		if err := json.NewEncoder(w).Encode(status); err != nil {
+			log.Printf("Error encoding status JSON: %v", err)
+		}
 	})
 
 	// Circuit breaker admin control endpoint
@@ -92,27 +94,27 @@ func (s *Server) Start() {
 		chainIDStr := r.URL.Query().Get("chain")
 		if chainIDStr == "" {
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Missing chain parameter"))
+			_, _ = w.Write([]byte("Missing chain parameter"))
 			return
 		}
 
 		chainID, err := strconv.Atoi(chainIDStr)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Invalid chain ID"))
+			_, _ = w.Write([]byte("Invalid chain ID"))
 			return
 		}
 
 		cb, ok := s.circuitBreakers[chainID]
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte(fmt.Sprintf("No circuit breaker for chain %d", chainID)))
+			_, _ = w.Write([]byte(fmt.Sprintf("No circuit breaker for chain %d", chainID)))
 			return
 		}
 
 		cb.Reset()
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(fmt.Sprintf("Circuit breaker for chain %d reset", chainID)))
+		_, _ = w.Write([]byte(fmt.Sprintf("Circuit breaker for chain %d reset", chainID)))
 	})
 
 	// Expose Prometheus metrics

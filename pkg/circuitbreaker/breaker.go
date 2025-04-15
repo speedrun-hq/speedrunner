@@ -42,7 +42,7 @@ func (cb *CircuitBreaker) RecordFailure() bool {
 
 	// If the circuit is already tripped, check if it's time to try again
 	if cb.tripped {
-		if now.Sub(cb.tripTime) > cb.resetTimeout {
+		if time.Since(cb.tripTime) > cb.resetTimeout {
 			log.Printf("Circuit breaker: Attempting to reset after timeout")
 			cb.tripped = false
 			cb.failureCount = 0
@@ -52,7 +52,7 @@ func (cb *CircuitBreaker) RecordFailure() bool {
 	}
 
 	// Reset failure count if outside window
-	if now.Sub(cb.lastFailure) > cb.failureWindow {
+	if time.Since(cb.lastFailure) > cb.failureWindow {
 		cb.failureCount = 0
 	}
 
@@ -81,7 +81,7 @@ func (cb *CircuitBreaker) IsOpen() bool {
 	defer cb.mu.Unlock()
 
 	// If tripped but reset timeout has passed, try again
-	if cb.tripped && time.Now().Sub(cb.tripTime) > cb.resetTimeout {
+	if cb.tripped && time.Since(cb.tripTime) > cb.resetTimeout {
 		cb.tripped = false
 		cb.failureCount = 0
 		return false
