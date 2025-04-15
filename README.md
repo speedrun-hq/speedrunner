@@ -10,6 +10,19 @@ The Fulfiller service is responsible for:
 - Executing cross-chain transactions to fulfill intents
 - Managing transaction fees and gas costs across different networks
 
+## Package Structure
+
+The codebase is organized into the following packages:
+
+- `pkg/blockchain`: Chain configuration and blockchain interactions
+- `pkg/circuitbreaker`: Circuit breaker pattern implementation for improved reliability
+- `pkg/config`: Configuration loading and validation
+- `pkg/contracts`: Smart contract bindings generated from ABIs
+- `pkg/fulfiller`: Core service functionality including intent processing
+- `pkg/health`: Health check and metrics HTTP server
+- `pkg/metrics`: Prometheus metrics for monitoring
+- `pkg/models`: Data models shared across packages
+
 ## Prerequisites
 
 - Go 1.24 or higher
@@ -34,16 +47,32 @@ go mod download
 
 Create a `.env` file in the root directory with the following variables:
 ```
+# API Configuration
 API_ENDPOINT=<your-api-endpoint>
-PRIVATE_KEY=<your-private-key>
 POLLING_INTERVAL=<polling-interval-in-seconds>
+
+# Wallet Configuration
+PRIVATE_KEY=<your-private-key>
+
+# Performance and Optimization Settings
+WORKER_COUNT=10
+METRICS_PORT=8080
+
+# Circuit Breaker Configuration
+CIRCUIT_BREAKER_ENABLED=true
+CIRCUIT_BREAKER_THRESHOLD=5
+CIRCUIT_BREAKER_WINDOW=5m
+CIRCUIT_BREAKER_RESET=15m
 ```
 
 For each chain you want to support, add the following configuration:
 ```
-CHAIN_<CHAIN_ID>_RPC_URL=<rpc-url>
-CHAIN_<CHAIN_ID>_INTENT_ADDRESS=<intent-contract-address>
-CHAIN_<CHAIN_ID>_MIN_FEE=<minimum-fee>
+# Chain Configuration for <CHAIN_NAME>
+<CHAIN_NAME>_RPC_URL=<rpc-url>
+<CHAIN_NAME>_INTENT_ADDRESS=<intent-contract-address>
+<CHAIN_NAME>_MIN_FEE=<minimum-fee>
+<CHAIN_NAME>_USDC_ADDRESS=<usdc-token-address>
+<CHAIN_NAME>_GAS_MULTIPLIER=<gas-price-multiplier>
 ```
 
 ## Building
@@ -60,16 +89,14 @@ Run the fulfiller service:
 ./fulfiller
 ```
 
-## Project Structure
+## Monitoring
 
-- `main.go`: Core service implementation
-- `contracts/`: Smart contract ABIs and bindings
-- `go.mod` & `go.sum`: Go module dependencies
-
-## Dependencies
-
-- [go-ethereum](https://github.com/ethereum/go-ethereum): Ethereum client implementation
-- [godotenv](https://github.com/joho/godotenv): Environment variable management
+The service exposes Prometheus metrics on the configured metrics port (default: 8080):
+- `/metrics`: Prometheus metrics
+- `/health`: Health check endpoint
+- `/ready`: Readiness check endpoint
+- `/status`: Service status details
+- `/circuit/reset?chain=<chain_id>`: Reset circuit breaker for a specific chain (POST)
 
 ## License
 
