@@ -2,6 +2,12 @@
 
 A Go-based service that fulfills cross-chain intents for the Speedrun protocol. This service monitors and processes pending intents across different blockchain networks, ensuring efficient and reliable cross-chain transactions.
 
+## Features
+
+- Token approval optimization with unlimited approvals
+- Multi-chain support
+- Robust error handling and retry logic
+
 ## Overview
 
 The Fulfiller service is responsible for:
@@ -97,6 +103,54 @@ The service exposes Prometheus metrics on the configured metrics port (default: 
 - `/ready`: Readiness check endpoint
 - `/status`: Service status details
 - `/circuit/reset?chain=<chain_id>`: Reset circuit breaker for a specific chain (POST)
+
+## Running Tests
+
+We provide multiple ways to run tests, with a focus on isolated tests that don't depend on external blockchain libraries.
+
+### Using Make (Recommended)
+
+```bash
+# Run isolated tests (no ethereum dependencies)
+make test-isolated
+
+# Generate coverage report
+make coverage
+
+# Run all tests (may have dependency issues)
+make test
+```
+
+### Using Go Test Directly
+
+```bash
+# Run isolated tests only
+go test -v ./pkg/fulfiller/approval_test.go ./pkg/fulfiller/simple_test.go ./pkg/fulfiller/isolated_test.go
+
+# Run a specific test file
+go test -v ./pkg/fulfiller/approval_test.go
+```
+
+## Testing Approach
+
+We've implemented two testing approaches:
+
+1. **Isolated Tests**: These tests use our custom mocks in `pkg/fulfiller/mocks` instead of relying on go-ethereum libraries. They're guaranteed to run in any environment, including CI.
+
+2. **Full Tests**: These tests include blockchain simulation and may have dependency issues with go-ethereum libraries.
+
+Our CI pipeline runs the isolated tests to avoid dependency problems with `github.com/fjl/memsize` and other go-ethereum dependencies.
+
+## Dependency Issues
+
+If you encounter errors with the `github.com/fjl/memsize` dependency (e.g., `invalid reference to runtime.stopTheWorld`), you have two options:
+
+1. Run only the isolated tests using `make test-isolated`
+2. Pin a specific version of the dependency with:
+   ```bash
+   go mod edit -replace github.com/fjl/memsize=github.com/fjl/memsize@v0.0.0-20190710130421-bcb5799ab5e5
+   go mod tidy
+   ```
 
 ## License
 

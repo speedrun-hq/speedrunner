@@ -18,19 +18,23 @@ jobs:
         go-version: '1.24'
         cache: true
 
-    - name: Fix dependencies
+    - name: Set up module path
       run: |
-        go mod tidy
+        # Create the correct module structure
+        mkdir -p $GITHUB_WORKSPACE/src/github.com/speedrun-hq/
+        ln -s $GITHUB_WORKSPACE $GITHUB_WORKSPACE/src/github.com/speedrun-hq/fulfiller
+        echo "GOPATH=$GITHUB_WORKSPACE" >> $GITHUB_ENV
+        echo "GO111MODULE=on" >> $GITHUB_ENV
 
-    - name: Run isolated tests
+    - name: Setup and run tests
       run: |
-        # Run only the standalone isolated tests that don't depend on go-ethereum
-        go test -v ./pkg/fulfiller/approval_test.go ./pkg/fulfiller/simple_test.go ./pkg/fulfiller/isolated_test.go
+        # Use our Makefile targets
+        make setup
+        make test-isolated
 
-    - name: Run test with coverage
+    - name: Generate coverage
       run: |
-        # Generate coverage report for isolated tests
-        go test -v -coverprofile=coverage.out ./pkg/fulfiller/approval_test.go ./pkg/fulfiller/simple_test.go ./pkg/fulfiller/isolated_test.go
+        make coverage
 
     - name: Upload coverage report
       uses: codecov/codecov-action@v3
