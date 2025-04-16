@@ -9,46 +9,46 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    env:
+      # Define Go variables
+      GITHUB_GO_VERSION: '1.24'
+      MODULE_PATH: github.com/speedrun-hq/speedrun-fulfiller
+      
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
-      with:
-        path: speedrun-fulfiller
 
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.24'
+        go-version: ${{ env.GITHUB_GO_VERSION }}
         cache: true
-
-    - name: Setup Go module path
+    
+    - name: Debug environment
       run: |
-        mkdir -p $GITHUB_WORKSPACE/github.com/speedrun-hq
-        mv $GITHUB_WORKSPACE/speedrun-fulfiller $GITHUB_WORKSPACE/github.com/speedrun-hq/
-        echo "GOPATH=$GITHUB_WORKSPACE" >> $GITHUB_ENV
-        echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
-
-    - name: Display Go environment
-      run: |
-        cd $GITHUB_WORKSPACE/github.com/speedrun-hq/speedrun-fulfiller
         go env
+        echo "GITHUB_WORKSPACE: $GITHUB_WORKSPACE"
+        echo "MODULE_PATH: $MODULE_PATH"
+        pwd
+        ls -la
+    
+    - name: Set up module replacement
+      run: |
+        # Add a replace directive to go.mod that points to the current directory
+        # This lets Go know that imports of your module should resolve to this directory
+        # regardless of where it's physically located
+        echo "replace $MODULE_PATH => $(pwd)" >> go.mod
+        cat go.mod
 
     - name: Install dependencies
       run: |
-        cd $GITHUB_WORKSPACE/github.com/speedrun-hq/speedrun-fulfiller
         go mod download
-
-    - name: Verify dependencies
-      run: |
-        cd $GITHUB_WORKSPACE/github.com/speedrun-hq/speedrun-fulfiller
-        go mod verify
+        go mod tidy
 
     - name: Build
       run: |
-        cd $GITHUB_WORKSPACE/github.com/speedrun-hq/speedrun-fulfiller
         go build -v ./...
 
     - name: Run tests
       run: |
-        cd $GITHUB_WORKSPACE/github.com/speedrun-hq/speedrun-fulfiller
-        go test -v ./... -race -coverprofile=coverage.txt -covermode=atomic 
+        go test -v ./... -race 
