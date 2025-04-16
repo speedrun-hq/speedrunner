@@ -1,4 +1,4 @@
-module github.com/speedrun-hq/fulfiller
+module github.com/speedrun-hq/speedrun-fulfiller
 
 go 1.24
 

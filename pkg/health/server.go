@@ -8,8 +8,8 @@ import (
 	"strconv"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/speedrun-hq/fulfiller/pkg/blockchain"
-	"github.com/speedrun-hq/fulfiller/pkg/circuitbreaker"
+	"github.com/speedrun-hq/speedrun-fulfiller/pkg/blockchain"
+	"github.com/speedrun-hq/speedrun-fulfiller/pkg/circuitbreaker"
 )
 
 // Server represents a health check HTTP server

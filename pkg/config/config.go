@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
-	"github.com/speedrun-hq/fulfiller/pkg/blockchain"
+	"github.com/speedrun-hq/speedrun-fulfiller/pkg/blockchain"
 )
 
 // Config holds the configuration for the fulfiller service
