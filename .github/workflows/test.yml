@@ -20,10 +20,8 @@ jobs:
 
     - name: Install dependencies
       run: |
-        cd api
         go mod download
 
     - name: Run tests
       run: |
-        cd api
-        go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+        make test-isolated
