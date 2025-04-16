@@ -22,11 +22,7 @@ jobs:
     - name: Run isolated tests
       run: |
         go mod tidy
-        # Create a temporary go.mod without memsize
-        cp go.mod go.mod.bak
-        go mod edit -droprequire github.com/fjl/memsize
-        go test -v ./pkg/fulfiller -run "TestSimple|TestIsolated|TestApproval"
-        mv go.mod.bak go.mod
+        make test-isolated
         
     - name: Verify build
       run: |
