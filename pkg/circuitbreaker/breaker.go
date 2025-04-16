@@ -98,3 +98,24 @@ func (cb *CircuitBreaker) Reset() {
 	cb.tripped = false
 	cb.failureCount = 0
 }
+
+// GetState returns the current state of the circuit breaker
+func (cb *CircuitBreaker) GetState() (failureCount int, lastFailure time.Time, failureWindow time.Duration, failThreshold int) {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	return cb.failureCount, cb.lastFailure, cb.failureWindow, cb.failThreshold
+}
+
+// GetTripTime returns the time when the circuit was tripped
+func (cb *CircuitBreaker) GetTripTime() time.Time {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	return cb.tripTime
+}
+
+// IsEnabled returns true if the circuit breaker is enabled
+func (cb *CircuitBreaker) IsEnabled() bool {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	return cb.enabled
+}

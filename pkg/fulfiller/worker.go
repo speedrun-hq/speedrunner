@@ -29,14 +29,21 @@ func (s *Service) worker(ctx context.Context, id int) {
 			}
 
 			// Check circuit breaker for destination chain
-			if cb, ok := s.circuitBreakers[intent.DestinationChain]; ok && cb.IsOpen() {
-				log.Printf("Worker %d: Circuit breaker open for chain %d, skipping intent %s",
-					id, intent.DestinationChain, intent.ID)
-				s.wg.Done()
-				continue
+			if cb, ok := s.circuitBreakers[intent.DestinationChain]; ok && cb.IsEnabled() {
+				if cb.IsOpen() {
+					failureCount, lastFailure, _, _ := cb.GetState()
+					log.Printf("Worker %d: Circuit breaker open for chain %d (last failure: %v, failure count: %d), skipping intent %s",
+						id, intent.DestinationChain, lastFailure, failureCount, intent.ID)
+					s.wg.Done()
+					continue
+				}
+				failureCount, lastFailure, _, _ := cb.GetState()
+				log.Printf("Worker %d: Circuit breaker status for chain %d - failures: %d, last failure: %v",
+					id, intent.DestinationChain, failureCount, lastFailure)
 			}
 
-			log.Printf("Worker %d processing intent %s", id, intent.ID)
+			log.Printf("Worker %d processing intent %s (source: %d, dest: %d, amount: %s)",
+				id, intent.ID, intent.SourceChain, intent.DestinationChain, intent.Amount)
 
 			// Record start time for processing duration metric
 			startTime := time.Now()
@@ -54,8 +61,13 @@ func (s *Service) worker(ctx context.Context, id int) {
 				circuitTripped := false
 				if cb, ok := s.circuitBreakers[intent.DestinationChain]; ok {
 					circuitTripped = cb.RecordFailure()
+					failureCount, _, failureWindow, failThreshold := cb.GetState()
 					if circuitTripped {
-						log.Printf("Circuit breaker tripped for chain %d", intent.DestinationChain)
+						log.Printf("Circuit breaker tripped for chain %d - threshold reached: %d failures in %v window",
+							intent.DestinationChain, failureCount, failureWindow)
+					} else {
+						log.Printf("Recorded failure for chain %d - current count: %d/%d in %v window",
+							intent.DestinationChain, failureCount, failThreshold, failureWindow)
 					}
 				}
 
@@ -91,6 +103,7 @@ func (s *Service) worker(ctx context.Context, id int) {
 						metrics.RetryCount.WithLabelValues(strconv.Itoa(intent.DestinationChain)).Inc()
 
 						log.Printf("Scheduling retry for intent %s in %v", intent.ID, backoff)
+						s.wg.Add(1)
 						s.retryJobs <- retryJob
 					} else {
 						log.Printf("Max retries reached for intent %s, giving up", intent.ID)
