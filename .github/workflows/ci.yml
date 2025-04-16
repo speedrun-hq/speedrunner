@@ -15,20 +15,38 @@ jobs:
       uses: actions/checkout@v3
       with:
         fetch-depth: 0
-        path: src
 
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
         go-version: '1.21'
 
-    - name: Prepare workspace
+    - name: Set up module replacements
       run: |
-        mkdir -p $GITHUB_WORKSPACE/pkg/fulfiller
-        cp -r src/pkg/fulfiller/* $GITHUB_WORKSPACE/pkg/fulfiller/
-        cp src/go.mod src/go.sum $GITHUB_WORKSPACE/
-        cp src/main.go $GITHUB_WORKSPACE/
-        ls -la $GITHUB_WORKSPACE/pkg/fulfiller/
+        # Create a temporary module
+        mkdir -p /tmp/builder
+        cd /tmp/builder
+        go mod init builder
+        
+        # Add the main module as a dependency with local replacement
+        echo "require github.com/speedrun-hq/speedrun-fulfiller v0.0.0" >> go.mod
+        echo "replace github.com/speedrun-hq/speedrun-fulfiller => $GITHUB_WORKSPACE" >> go.mod
+        
+        # Create a simple main.go that imports the module
+        cat > main.go << 'EOF'
+        package main
+        
+        import (
+          _ "github.com/speedrun-hq/speedrun-fulfiller/pkg/fulfiller"
+        )
+        
+        func main() {
+          // Just import check
+        }
+        EOF
+        
+        # Build to verify
+        go build
         
     - name: Run isolated tests
       run: |
