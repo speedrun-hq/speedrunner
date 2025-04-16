@@ -31,14 +31,3 @@ jobs:
         # Use our Makefile targets
         make setup
         make test-isolated
-
-    - name: Generate coverage
-      run: |
-        make coverage
-
-    - name: Upload coverage report
-      uses: codecov/codecov-action@v3
-      with:
-        file: ./coverage.out
-        flags: unittests
-        verbose: true 
