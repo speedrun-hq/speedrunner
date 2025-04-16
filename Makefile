@@ -9,7 +9,7 @@ setup:
 
 # Run isolated tests that don't depend on go-ethereum
 test-isolated:
-	go test -v ./pkg/fulfiller/approval_test.go ./pkg/fulfiller/simple_test.go ./pkg/fulfiller/isolated_test.go
+	go test -v ./pkg/fulfiller -run "TestSimple|TestIsolated|TestApproval"
 
 # Run all tests (may have dependency issues)
 test:
@@ -25,7 +25,7 @@ lint:
 
 # Generate coverage report
 coverage:
-	go test -v -coverprofile=coverage.out ./pkg/fulfiller/approval_test.go ./pkg/fulfiller/simple_test.go ./pkg/fulfiller/isolated_test.go
+	go test -v -coverprofile=coverage.out ./pkg/fulfiller -run "TestSimple|TestIsolated|TestApproval"
 	go tool cover -html=coverage.out
 
 # Clean up
