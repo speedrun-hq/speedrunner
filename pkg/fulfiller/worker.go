@@ -27,19 +27,14 @@ func (s *Service) worker(ctx context.Context, id int) {
 				log.Printf("Worker %d shutting down: channel closed", id)
 				return
 			}
-
-			// Check circuit breaker for destination chain
-			if cb, ok := s.circuitBreakers[intent.DestinationChain]; ok && cb.IsEnabled() {
-				if cb.IsOpen() {
-					failureCount, lastFailure, _, _ := cb.GetState()
-					log.Printf("Worker %d: Circuit breaker open for chain %d (last failure: %v, failure count: %d), skipping intent %s",
-						id, intent.DestinationChain, lastFailure, failureCount, intent.ID)
-					s.wg.Done()
-					continue
-				}
+      
+			// Check if circuit breaker is enabled and open for destination chain
+			if cb, ok := s.circuitBreakers[intent.DestinationChain]; ok && cb.IsEnabled() && cb.IsOpen() {
 				failureCount, lastFailure, _, _ := cb.GetState()
-				log.Printf("Worker %d: Circuit breaker status for chain %d - failures: %d, last failure: %v",
-					id, intent.DestinationChain, failureCount, lastFailure)
+				log.Printf("Worker %d: Circuit breaker open for chain %d (last failure: %v, failure count: %d), skipping intent %s",
+					id, intent.DestinationChain, lastFailure, failureCount, intent.ID)
+				s.wg.Done()
+				continue
 			}
 
 			log.Printf("Worker %d processing intent %s (source: %d, dest: %d, amount: %s)",

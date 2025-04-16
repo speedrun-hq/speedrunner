@@ -22,10 +22,13 @@ import (
 
 // APIResponse represents the structure of the API response
 type APIResponse struct {
-	Intents []models.Intent `json:"intents,omitempty"`
-	Data    []models.Intent `json:"data,omitempty"`    // Some APIs use "data" as the key
-	Results []models.Intent `json:"results,omitempty"` // Some APIs use "results" as the key
-	// Add other fields that might be in the response
+	Intents    []models.Intent `json:"intents,omitempty"`
+	Data       []models.Intent `json:"data,omitempty"`    // Some APIs use "data" as the key
+	Results    []models.Intent `json:"results,omitempty"` // Some APIs use "results" as the key
+	Page       int             `json:"page"`
+	PageSize   int             `json:"page_size"`
+	TotalCount int             `json:"total_count"`
+	TotalPages int             `json:"total_pages"`
 }
 
 // Service handles the intent fulfillment process
@@ -130,9 +133,9 @@ func (s *Service) Start(ctx context.Context) {
 
 // fetchPendingIntents gets pending intents from the API
 func (s *Service) fetchPendingIntents() ([]models.Intent, error) {
-	resp, err := s.httpClient.Get(s.config.APIEndpoint + "/api/v1/intents")
+	resp, err := s.httpClient.Get(s.config.APIEndpoint + "/api/v1/intents?status=pending")
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch intents: %v", err)
+		return nil, fmt.Errorf("failed to fetch pending intents: %v", err)
 	}
 	defer resp.Body.Close()
 
@@ -140,20 +143,13 @@ func (s *Service) fetchPendingIntents() ([]models.Intent, error) {
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	// Read the response body for debugging
+	// Read the response body
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %v", err)
 	}
 
-	// Log first bit of response for debugging
-	logLimit := 500
-	if len(bodyBytes) < logLimit {
-		logLimit = len(bodyBytes)
-	}
-	log.Printf("API Response (first %d bytes): %s", logLimit, bodyBytes[:logLimit])
-
-	// Try first to unmarshal into our wrapper struct
+	// Try to unmarshal into our wrapper struct first
 	var apiResp APIResponse
 	if err := json.Unmarshal(bodyBytes, &apiResp); err != nil {
 		// If that fails, try directly as an array
@@ -161,8 +157,14 @@ func (s *Service) fetchPendingIntents() ([]models.Intent, error) {
 		if err := json.Unmarshal(bodyBytes, &intents); err != nil {
 			return nil, fmt.Errorf("failed to decode intents: %v", err)
 		}
-		intents = filterPendingIntents(intents)
 		return intents, nil
+	}
+
+	// Handle paginated response with no data
+	if apiResp.TotalCount == 0 {
+		log.Printf("No pending intents found (page %d/%d, total count: %d)",
+			apiResp.Page, apiResp.TotalPages, apiResp.TotalCount)
+		return []models.Intent{}, nil
 	}
 
 	// Get intents from whatever field is populated
@@ -196,24 +198,12 @@ func (s *Service) fetchPendingIntents() ([]models.Intent, error) {
 		}
 
 		if len(intents) == 0 {
-			return nil, fmt.Errorf("no intents found in API response")
+			// This is a normal case when there are no pending intents
+			log.Printf("No pending intents found in API response")
+			return []models.Intent{}, nil
 		}
 	}
-
-	// Only return intents that are pending
-	intents = filterPendingIntents(intents)
 	return intents, nil
-}
-
-// filterPendingIntents filters intents that are pending
-func filterPendingIntents(intents []models.Intent) []models.Intent {
-	pendingIntents := []models.Intent{}
-	for _, intent := range intents {
-		if intent.Status == "pending" {
-			pendingIntents = append(pendingIntents, intent)
-		}
-	}
-	return pendingIntents
 }
 
 // filterViableIntents filters intents that are viable for fulfillment
