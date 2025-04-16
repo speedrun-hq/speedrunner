@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, fulfiller-improvements ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        path: speedrun-fulfiller
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Verify directory structure
+      run: |
+        ls -la
+        echo "Current directory: $(pwd)"
+        cd speedrun-fulfiller
+        echo "Repository directory: $(pwd)"
+        ls -la
+        
+    - name: Run isolated tests
+      working-directory: ./speedrun-fulfiller
+      run: |
+        go mod tidy
+        make test-isolated
+        
+    - name: Verify build
+      working-directory: ./speedrun-fulfiller
+      run: |
+        go build ./... 
