@@ -17,16 +17,12 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.21'
+        go-version: '1.24'
 
-    - name: Fix memsize package
-      run: |
-        go get github.com/fjl/memsize@v0.0.0-20190710130421-bcb5799ab5e5
-        go mod tidy
-        
     - name: Run isolated tests
       run: |
-        make test-isolated
+        go mod tidy
+        go test -v ./pkg/fulfiller -run "TestSimple|TestIsolated|TestApproval" -tags=nolink
         
     - name: Verify build
       run: |
