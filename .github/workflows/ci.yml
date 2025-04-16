@@ -12,6 +12,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
+      with:
+        path: speedrun-fulfiller
 
     - name: Set up Go
       uses: actions/setup-go@v4
@@ -19,23 +21,34 @@ jobs:
         go-version: '1.24'
         cache: true
 
-    - name: Setup Go workspace
+    - name: Setup Go module path
       run: |
-        go work init
-        go work use .
+        mkdir -p $GITHUB_WORKSPACE/github.com/speedrun-hq
+        mv $GITHUB_WORKSPACE/speedrun-fulfiller $GITHUB_WORKSPACE/github.com/speedrun-hq/
+        echo "GOPATH=$GITHUB_WORKSPACE" >> $GITHUB_ENV
+        echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
+
+    - name: Display Go environment
+      run: |
+        cd $GITHUB_WORKSPACE/github.com/speedrun-hq/speedrun-fulfiller
+        go env
 
     - name: Install dependencies
       run: |
+        cd $GITHUB_WORKSPACE/github.com/speedrun-hq/speedrun-fulfiller
         go mod download
 
     - name: Verify dependencies
       run: |
+        cd $GITHUB_WORKSPACE/github.com/speedrun-hq/speedrun-fulfiller
         go mod verify
 
     - name: Build
       run: |
+        cd $GITHUB_WORKSPACE/github.com/speedrun-hq/speedrun-fulfiller
         go build -v ./...
 
     - name: Run tests
       run: |
+        cd $GITHUB_WORKSPACE/github.com/speedrun-hq/speedrun-fulfiller
         go test -v ./... -race -coverprofile=coverage.txt -covermode=atomic 
