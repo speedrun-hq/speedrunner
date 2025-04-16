@@ -40,8 +40,8 @@ The codebase is organized into the following packages:
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/speedrun-hq/fulfiller.git
-cd fulfiller
+git clone https://github.com/speedrun-hq/speedrun-fulfiller.git
+cd speedrun-fulfiller
 ```
 
 2. Install dependencies:
