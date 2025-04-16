@@ -27,7 +27,7 @@ func (s *Service) worker(ctx context.Context, id int) {
 				log.Printf("Worker %d shutting down: channel closed", id)
 				return
 			}
-
+      
 			// Check if circuit breaker is enabled and open for destination chain
 			if cb, ok := s.circuitBreakers[intent.DestinationChain]; ok && cb.IsEnabled() && cb.IsOpen() {
 				failureCount, lastFailure, _, _ := cb.GetState()
