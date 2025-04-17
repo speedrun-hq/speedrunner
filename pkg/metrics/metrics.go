@@ -38,4 +38,46 @@ var (
 		Name: "fulfiller_retry_count_total",
 		Help: "Total number of retry attempts",
 	}, []string{"chain_id"})
+
+	// New metrics for error tracking
+	FulfillmentErrors = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "fulfiller_errors_total",
+		Help: "Total number of errors by type",
+	}, []string{"chain_id", "error_type"})
+
+	PermanentErrors = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "fulfiller_permanent_errors_total",
+		Help: "Total number of permanent errors that won't be retried",
+	}, []string{"chain_id", "error_type"})
+
+	// Retry related metrics
+	MaxRetriesReached = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "fulfiller_max_retries_reached_total",
+		Help: "Number of intents that reached maximum retry attempts",
+	}, []string{"chain_id", "error_type"})
+
+	RetryQueueSize = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "fulfiller_retry_queue_size",
+		Help: "Current size of the retry queue",
+	})
+
+	NextRetryIn = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "fulfiller_next_retry_seconds",
+		Help: "Seconds until the next scheduled retry",
+	})
+
+	RetriesExecuted = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "fulfiller_retries_executed_total",
+		Help: "Number of retries that were executed",
+	}, []string{"chain_id", "error_type"})
+
+	RetriesSkipped = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "fulfiller_retries_skipped_total",
+		Help: "Number of retries that were skipped",
+	}, []string{"chain_id", "reason"})
+
+	DroppedRetries = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "fulfiller_retries_dropped_total",
+		Help: "Number of retries that were dropped due to queue capacity",
+	}, []string{"chain_id"})
 )
