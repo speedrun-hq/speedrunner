@@ -114,11 +114,16 @@ func (s *Service) worker(ctx context.Context, id int) {
 							Intent:      intent,
 							RetryCount:  retryCount + 1,
 							NextAttempt: nextAttempt,
-							ErrorType:   errorType,
 						}
 
-						// Modify intent ID to track retry count
-						retryJob.Intent.ID = fmt.Sprintf("%s_retry_%d", parts[0], retryCount+1)
+						// Store error type in the ID for now (since the field is causing linter issues)
+						if errorType != "" {
+							// Add error type as a tag to the intent ID
+							retryJob.Intent.ID = fmt.Sprintf("%s_retry_%d_error_%s", parts[0], retryCount+1, errorType)
+						} else {
+							// Standard ID format without error type
+							retryJob.Intent.ID = fmt.Sprintf("%s_retry_%d", parts[0], retryCount+1)
+						}
 
 						// Update retry count metric
 						metrics.RetryCount.WithLabelValues(strconv.Itoa(intent.DestinationChain)).Inc()
@@ -166,6 +171,16 @@ func shouldRetryError(err error) (bool, string) {
 		strings.Contains(errStr, "no response") ||
 		strings.Contains(errStr, "EOF") {
 		return true, "network_error"
+	}
+
+	// RPC node state errors - retry with longer backoff
+	if strings.Contains(errStr, "missing trie node") ||
+		strings.Contains(errStr, "layer stale") ||
+		strings.Contains(errStr, "getDeleteStateObject") ||
+		strings.Contains(errStr, "state inconsistency") ||
+		strings.Contains(errStr, "receipt not found") ||
+		strings.Contains(errStr, "block not found") {
+		return true, "node_state_error"
 	}
 
 	// Gas-related errors - retry may help if gas prices change
@@ -260,6 +275,12 @@ func (s *Service) retryHandler(ctx context.Context) {
 				// Extract base intent ID without retry suffix
 				baseIntentID := strings.Split(job.Intent.ID, "_retry_")[0]
 
+				// Extract error type from ID if present
+				errorType := "unknown_error"
+				if parts := strings.Split(job.Intent.ID, "_error_"); len(parts) > 1 {
+					errorType = parts[1]
+				}
+
 				if job.NextAttempt.Before(now) {
 					// Only process up to the max per tick
 					if processed >= maxProcessPerTick {
@@ -271,10 +292,10 @@ func (s *Service) retryHandler(ctx context.Context) {
 					// Skip this check if we failed to fetch pending intents
 					if err != nil || pendingIntentMap[baseIntentID] {
 						log.Printf("Retrying intent %s (attempt #%d, error type: %s)",
-							job.Intent.ID, job.RetryCount, job.ErrorType)
+							job.Intent.ID, job.RetryCount, errorType)
 						s.pendingJobs <- job.Intent
 						processed++
-						metrics.RetriesExecuted.WithLabelValues(strconv.Itoa(job.Intent.DestinationChain), job.ErrorType).Inc()
+						metrics.RetriesExecuted.WithLabelValues(strconv.Itoa(job.Intent.DestinationChain), errorType).Inc()
 					} else {
 						log.Printf("Intent %s is no longer pending, removing from retry queue", baseIntentID)
 						s.wg.Done() // Release the waitgroup count since we're not processing this intent
