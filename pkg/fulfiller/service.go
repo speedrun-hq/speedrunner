@@ -294,6 +294,10 @@ func initializeTokenAddresses(tokenAddresses map[int]common.Address) {
 	if bscUSDC := getEnvAddr("BSC_USDC_ADDRESS"); bscUSDC != (common.Address{}) {
 		tokenAddresses[56] = bscUSDC
 	}
+
+	if zetachainUSDC := getEnvAddr("ZETACHAIN_USDC_ADDRESS"); zetachainUSDC != (common.Address{}) {
+		tokenAddresses[7000] = zetachainUSDC
+	}
 }
 
 // Helper to get address from environment
