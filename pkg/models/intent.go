@@ -10,6 +10,7 @@ type Intent struct {
 	SourceChain      int       `json:"source_chain"`
 	DestinationChain int       `json:"destination_chain"`
 	Token            string    `json:"token"`
+	TokenType        string    `json:"token_type"` // Can be "USDC", "USDT", etc.
 	Amount           string    `json:"amount"`
 	Recipient        string    `json:"recipient"`
 	IntentFee        string    `json:"intent_fee"`

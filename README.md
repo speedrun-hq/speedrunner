@@ -6,6 +6,7 @@ A Go-based service that fulfills cross-chain intents for the Speedrun protocol. 
 
 - Token approval optimization with unlimited approvals
 - Multi-chain support
+- Multi-token support per chain (USDC, USDT, and more)
 - Robust error handling and retry logic
 
 ## Overview
@@ -77,8 +78,12 @@ For each chain you want to support, add the following configuration:
 <CHAIN_NAME>_RPC_URL=<rpc-url>
 <CHAIN_NAME>_INTENT_ADDRESS=<intent-contract-address>
 <CHAIN_NAME>_MIN_FEE=<minimum-fee>
-<CHAIN_NAME>_USDC_ADDRESS=<usdc-token-address>
 <CHAIN_NAME>_GAS_MULTIPLIER=<gas-price-multiplier>
+
+# Token addresses for <CHAIN_NAME>
+<CHAIN_NAME>_USDC_ADDRESS=<usdc-token-address>
+<CHAIN_NAME>_USDT_ADDRESS=<usdt-token-address>
+# Add more tokens as needed
 ```
 
 ## Building
@@ -159,3 +164,21 @@ This project is licensed under the terms specified in the LICENSE file.
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Multi-Token Support
+
+The fulfiller now supports multiple tokens per chain. Currently, it supports USDC and USDT tokens on all supported chains, with the flexibility to add more in the future.
+
+To add a new token to a chain, simply add the token address to your environment variables:
+
+```
+# Example token configuration for Ethereum
+ETHEREUM_USDC_ADDRESS=0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48
+ETHEREUM_USDT_ADDRESS=0xdac17f958d2ee523a2206206994597c13d831ec7
+
+# Example token configuration for Polygon
+POLYGON_USDC_ADDRESS=0x2791bca1f2de4661ed88a30c99a7a9449aa84174
+POLYGON_USDT_ADDRESS=0xc2132d05d31c914a87c6611c10748aeb04b58e8f
+```
+
+Intents should specify a `token_type` field with values like "USDC" or "USDT" to indicate which token to use. If not specified, the fulfiller defaults to USDC.

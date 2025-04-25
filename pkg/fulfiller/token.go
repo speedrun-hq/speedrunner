@@ -77,10 +77,28 @@ const ERC20ABI = `[
 func (s *Service) OptimizedTokenApproval(
 	ctx context.Context,
 	chainConfig *blockchain.ChainConfig,
-	tokenAddress common.Address,
+	chainID int,
+	tokenType TokenType,
 	spenderAddress common.Address,
 	amount *big.Int,
 ) (bool, error) {
+	// Get token from the token map
+	s.mu.Lock()
+	chainTokens, exists := s.tokens[chainID]
+	s.mu.Unlock()
+
+	if !exists {
+		return false, fmt.Errorf("tokens not configured for chain: %d", chainID)
+	}
+
+	token, exists := chainTokens[tokenType]
+	if !exists {
+		return false, fmt.Errorf("token type %s not configured for chain: %d", tokenType, chainID)
+	}
+
+	tokenAddress := token.Address
+	log.Printf("Processing token approval for %s (%s) at address %s", token.Symbol, tokenType, tokenAddress.Hex())
+
 	// Create ERC20 contract binding
 	erc20ABI, err := abi.JSON(strings.NewReader(ERC20ABI))
 	if err != nil {
@@ -117,7 +135,7 @@ func (s *Service) OptimizedTokenApproval(
 		return false, fmt.Errorf("invalid allowance format")
 	}
 
-	log.Printf("Current allowance for token %s: %s", tokenAddress.Hex(), currentAllowance.String())
+	log.Printf("Current allowance for token %s (%s): %s", token.Symbol, tokenType, currentAllowance.String())
 
 	// Check if current allowance is sufficient
 	if currentAllowance.Cmp(amount) >= 0 {
@@ -128,7 +146,7 @@ func (s *Service) OptimizedTokenApproval(
 
 	// Determine optimal approval amount
 	approvalAmount := determineApprovalAmount(amount, currentAllowance)
-	log.Printf("Setting approval amount to %s for token %s", approvalAmount.String(), tokenAddress.Hex())
+	log.Printf("Setting approval amount to %s for token %s (%s)", approvalAmount.String(), token.Symbol, tokenType)
 
 	// Apply current gas price to transactor
 	txOpts := *chainConfig.Auth
@@ -138,7 +156,7 @@ func (s *Service) OptimizedTokenApproval(
 	if currentAllowance.Cmp(ZeroApproval) > 0 && approvalAmount.Cmp(currentAllowance) != 0 {
 		// Check if we need to reset allowance first (only for non-standard ERC20 implementations)
 		if s.shouldResetAllowance(tokenAddress) {
-			log.Printf("Resetting allowance for token %s before setting new allowance", tokenAddress.Hex())
+			log.Printf("Resetting allowance for token %s (%s) before setting new allowance", token.Symbol, tokenType)
 			resetTx, err := erc20Contract.Transact(&txOpts, "approve", spenderAddress, ZeroApproval)
 			if err != nil {
 				return false, fmt.Errorf("failed to reset token allowance: %v", err)
@@ -153,7 +171,7 @@ func (s *Service) OptimizedTokenApproval(
 				return false, fmt.Errorf("reset approve transaction failed")
 			}
 
-			log.Printf("Successfully reset approval for token %s", tokenAddress.Hex())
+			log.Printf("Successfully reset approval for token %s (%s)", token.Symbol, tokenType)
 		}
 	}
 
@@ -173,8 +191,8 @@ func (s *Service) OptimizedTokenApproval(
 		return false, fmt.Errorf("approve transaction failed")
 	}
 
-	log.Printf("Successfully approved token %s for spender %s with amount %s (gas used: %d)",
-		tokenAddress.Hex(), spenderAddress.Hex(), approvalAmount.String(), approveReceipt.GasUsed)
+	log.Printf("Successfully approved token %s (%s) for spender %s with amount %s (gas used: %d)",
+		token.Symbol, tokenType, spenderAddress.Hex(), approvalAmount.String(), approveReceipt.GasUsed)
 
 	return true, nil
 }
