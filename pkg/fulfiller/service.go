@@ -20,6 +20,23 @@ import (
 	"github.com/speedrun-hq/speedrun-fulfiller/pkg/models"
 )
 
+// TokenType represents the type of token
+type TokenType string
+
+const (
+	// TokenTypeUSDC represents USDC token
+	TokenTypeUSDC TokenType = "USDC"
+	// TokenTypeUSDT represents USDT token
+	TokenTypeUSDT TokenType = "USDT"
+)
+
+// Token represents a token with its address and metadata
+type Token struct {
+	Address common.Address
+	Symbol  string
+	Type    TokenType
+}
+
 // APIResponse represents the structure of the API response
 type APIResponse struct {
 	Intents    []models.Intent `json:"intents,omitempty"`
@@ -36,7 +53,7 @@ type Service struct {
 	config          *config.Config
 	httpClient      *http.Client
 	mu              sync.Mutex
-	tokenAddresses  map[int]common.Address
+	tokens          map[int]map[TokenType]Token
 	workers         int
 	pendingJobs     chan models.Intent
 	retryJobs       chan models.RetryJob
@@ -53,11 +70,16 @@ func NewService(cfg *config.Config) (*Service, error) {
 		}
 	}
 
-	// Initialize token addresses map
-	tokenAddresses := make(map[int]common.Address)
+	// Initialize tokens map
+	tokens := make(map[int]map[TokenType]Token)
+
+	// Initialize token map for each chain
+	for chainID := range cfg.Chains {
+		tokens[chainID] = make(map[TokenType]Token)
+	}
 
 	// Set token addresses for each chain from environment variables
-	initializeTokenAddresses(tokenAddresses)
+	initializeTokens(tokens)
 
 	// Initialize circuit breakers
 	circuitBreakers := make(map[int]*circuitbreaker.CircuitBreaker)
@@ -73,7 +95,7 @@ func NewService(cfg *config.Config) (*Service, error) {
 	return &Service{
 		config:          cfg,
 		httpClient:      createHTTPClient(),
-		tokenAddresses:  tokenAddresses,
+		tokens:          tokens,
 		workers:         cfg.WorkerCount,
 		pendingJobs:     make(chan models.Intent, 100),   // Buffer for pending intents
 		retryJobs:       make(chan models.RetryJob, 100), // Buffer for retry jobs
@@ -270,33 +292,56 @@ func createHTTPClient() *http.Client {
 }
 
 // Helper function to initialize token addresses
-func initializeTokenAddresses(tokenAddresses map[int]common.Address) {
-	if baseUSDC := getEnvAddr("BASE_USDC_ADDRESS"); baseUSDC != (common.Address{}) {
-		tokenAddresses[8453] = baseUSDC
+func initializeTokens(tokens map[int]map[TokenType]Token) {
+	// Define chain configurations
+	chainConfigs := []struct {
+		chainID   int
+		chainName string
+	}{
+		{8453, "BASE"},
+		{42161, "ARBITRUM"},
+		{137, "POLYGON"},
+		{1, "ETHEREUM"},
+		{43114, "AVALANCHE"},
+		{56, "BSC"},
+		{7000, "ZETACHAIN"},
 	}
 
-	if arbitrumUSDC := getEnvAddr("ARBITRUM_USDC_ADDRESS"); arbitrumUSDC != (common.Address{}) {
-		tokenAddresses[42161] = arbitrumUSDC
+	// Define token types
+	tokenTypes := []struct {
+		tokenType TokenType
+		symbol    string
+	}{
+		{TokenTypeUSDC, "USDC"},
+		{TokenTypeUSDT, "USDT"},
 	}
 
-	if polygonUSDC := getEnvAddr("POLYGON_USDC_ADDRESS"); polygonUSDC != (common.Address{}) {
-		tokenAddresses[137] = polygonUSDC
-	}
+	// Initialize tokens for each chain and token type
+	for _, chain := range chainConfigs {
+		// Ensure the chain map exists
+		if _, exists := tokens[chain.chainID]; !exists {
+			tokens[chain.chainID] = make(map[TokenType]Token)
+		}
 
-	if ethereumUSDC := getEnvAddr("ETHEREUM_USDC_ADDRESS"); ethereumUSDC != (common.Address{}) {
-		tokenAddresses[1] = ethereumUSDC
-	}
+		for _, tokenInfo := range tokenTypes {
+			// Construct environment variable name
+			envVarName := fmt.Sprintf("%s_%s_ADDRESS", chain.chainName, tokenInfo.symbol)
 
-	if avalancheUSDC := getEnvAddr("AVALANCHE_USDC_ADDRESS"); avalancheUSDC != (common.Address{}) {
-		tokenAddresses[43114] = avalancheUSDC
-	}
+			// Get token address from environment
+			tokenAddr := getEnvAddr(envVarName)
 
-	if bscUSDC := getEnvAddr("BSC_USDC_ADDRESS"); bscUSDC != (common.Address{}) {
-		tokenAddresses[56] = bscUSDC
-	}
+			// Skip if not configured
+			if tokenAddr == (common.Address{}) {
+				continue
+			}
 
-	if zetachainUSDC := getEnvAddr("ZETACHAIN_USDC_ADDRESS"); zetachainUSDC != (common.Address{}) {
-		tokenAddresses[7000] = zetachainUSDC
+			// Initialize token
+			tokens[chain.chainID][tokenInfo.tokenType] = Token{
+				Address: tokenAddr,
+				Symbol:  tokenInfo.symbol,
+				Type:    tokenInfo.tokenType,
+			}
+		}
 	}
 }
 
