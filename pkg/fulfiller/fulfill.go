@@ -64,28 +64,8 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 	// Get the Intent contract address
 	intentAddress := common.HexToAddress(chainConfig.IntentAddress)
 
-	// Get the token type from intent, default to USDC if not specified
-	tokenType := TokenTypeUSDC
-	if intent.TokenType != "" {
-		tokenType = TokenType(strings.ToUpper(intent.TokenType))
-	}
-
-	// Get token address from the map
-	s.mu.Lock()
-	chainTokens, exists := s.tokens[intent.DestinationChain]
-	s.mu.Unlock()
-
-	if !exists {
-		return fmt.Errorf("token mapping not configured for chain: %d", intent.DestinationChain)
-	}
-
-	token, exists := chainTokens[tokenType]
-	if !exists {
-		return fmt.Errorf("token type %s not configured for chain: %d", tokenType, intent.DestinationChain)
-	}
-
-	tokenAddress := token.Address
-	log.Printf("Using token %s (%s) address %s for chain %d", token.Symbol, tokenType, tokenAddress.Hex(), intent.DestinationChain)
+	// Use token address directly from intent.Token if provided, otherwise fall back to token type
+	tokenAddress := common.HexToAddress(intent.Token)
 
 	// First, approve the token transfer
 	// We need to approve the Intent contract to spend our tokens
