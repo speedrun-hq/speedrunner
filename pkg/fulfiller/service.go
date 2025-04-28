@@ -381,6 +381,8 @@ func initializeTokens(tokens map[int]map[TokenType]Token) {
 
 			// Skip if not configured
 			if tokenAddr == (common.Address{}) {
+				log.Printf("Warning: Token %s not configured for chain %s (chainID: %d) - env var %s not found or empty",
+					tokenInfo.symbol, chain.chainName, chain.chainID, envVarName)
 				continue
 			}
 
@@ -390,6 +392,23 @@ func initializeTokens(tokens map[int]map[TokenType]Token) {
 				Symbol:  tokenInfo.symbol,
 				Type:    tokenInfo.tokenType,
 			}
+
+			log.Printf("Loaded token %s for chain %s (chainID: %d): %s",
+				tokenInfo.symbol, chain.chainName, chain.chainID, tokenAddr.Hex())
+		}
+	}
+
+	// Print summary of configured tokens
+	log.Println("Token configuration summary:")
+	for chainID, chainTokens := range tokens {
+		if len(chainTokens) == 0 {
+			log.Printf("  Chain %d: No tokens configured", chainID)
+			continue
+		}
+
+		log.Printf("  Chain %d:", chainID)
+		for tokenType, token := range chainTokens {
+			log.Printf("    %s: %s", string(tokenType), token.Address.Hex())
 		}
 	}
 }
@@ -408,6 +427,8 @@ func getEnv(key string) string {
 }
 
 // queueForRetry adds an intent to the retry queue
+//
+//nolint:unused
 func (s *Service) queueForRetry(intent models.Intent, errorType string, initialDelay time.Duration) {
 	retryJob := models.RetryJob{
 		Intent:      intent,
@@ -416,6 +437,37 @@ func (s *Service) queueForRetry(intent models.Intent, errorType string, initialD
 		ErrorType:   errorType,
 	}
 	s.retryJobs <- retryJob
+}
+
+// TransactionMonitorTick performs a single check of transaction status
+// This can be called periodically to check transaction status
+func (s *Service) TransactionMonitorTick(ctx context.Context) {
+	// Process each chain
+	for chainID, chainConfig := range s.config.Chains {
+		// Check for timed out transactions
+		timedOutNonces := s.nonceManager.FindTimeoutTransactions(chainID)
+		for _, nonce := range timedOutNonces {
+			log.Printf("Transaction timeout detected for chain %d, nonce %d", chainID, nonce)
+			s.nonceManager.ReuseNonce(chainID, nonce)
+
+			// Update metrics
+			metrics.FulfilledIntents.WithLabelValues(
+				fmt.Sprintf("%d", chainID),
+				"timeout",
+			).Inc()
+		}
+
+		// Periodically sync nonce state with the blockchain
+		err := s.nonceManager.SyncWithBlockchain(
+			ctx,
+			chainID,
+			chainConfig.Client,
+			chainConfig.Auth.From,
+		)
+		if err != nil {
+			log.Printf("Failed to sync nonce state for chain %d: %v", chainID, err)
+		}
+	}
 }
 
 // checkAndCacheAllowance checks if there's enough token allowance and caches the result
