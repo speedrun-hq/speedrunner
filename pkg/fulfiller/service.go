@@ -9,14 +9,10 @@ import (
 	"math/big"
 	"net/http"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/blockchain"
 	"github.com/speedrun-hq/speedrun-fulfiller/pkg/circuitbreaker"
 	"github.com/speedrun-hq/speedrun-fulfiller/pkg/config"
 	"github.com/speedrun-hq/speedrun-fulfiller/pkg/health"
@@ -41,21 +37,6 @@ type Token struct {
 	Type    TokenType
 }
 
-// AllowanceCacheKey is used as a key for the allowance cache
-type AllowanceCacheKey struct {
-	ChainID     int
-	TokenAddr   common.Address
-	OwnerAddr   common.Address
-	SpenderAddr common.Address
-}
-
-// AllowanceCacheEntry represents a cached allowance entry
-type AllowanceCacheEntry struct {
-	Allowance  *big.Int
-	UpdatedAt  time.Time
-	Expiration time.Time
-}
-
 // APIResponse represents the structure of the API response
 type APIResponse struct {
 	Intents    []models.Intent `json:"intents,omitempty"`
@@ -78,9 +59,6 @@ type Service struct {
 	retryJobs       chan models.RetryJob
 	wg              sync.WaitGroup
 	circuitBreakers map[int]*circuitbreaker.CircuitBreaker
-	allowanceCache  map[AllowanceCacheKey]AllowanceCacheEntry
-	allowanceMu     sync.RWMutex             // Separate mutex for allowance cache to reduce contention
-	nonceManager    *blockchain.NonceManager // Nonce manager for handling transaction nonces
 }
 
 // NewService creates a new fulfiller service
@@ -114,11 +92,6 @@ func NewService(cfg *config.Config) (*Service, error) {
 		)
 	}
 
-	// Initialize nonce manager
-	nonceManager := blockchain.NewNonceManager()
-	// Configure transaction timeout (optional, defaults to 5 minutes)
-	nonceManager.SetTransactionTimeout(10 * time.Minute) // Longer timeout for blockchain transactions
-
 	return &Service{
 		config:          cfg,
 		httpClient:      createHTTPClient(),
@@ -127,8 +100,6 @@ func NewService(cfg *config.Config) (*Service, error) {
 		pendingJobs:     make(chan models.Intent, 100),   // Buffer for pending intents
 		retryJobs:       make(chan models.RetryJob, 100), // Buffer for retry jobs
 		circuitBreakers: circuitBreakers,
-		allowanceCache:  make(map[AllowanceCacheKey]AllowanceCacheEntry),
-		nonceManager:    nonceManager,
 	}, nil
 }
 
@@ -146,26 +117,6 @@ func (s *Service) Start(ctx context.Context) {
 
 	// Start retry handler
 	go s.retryHandler(ctx)
-
-	// Start transaction monitoring
-	go func() {
-		log.Println("Transaction monitor started")
-		ticker := time.NewTicker(1 * time.Minute) // Check every minute
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				log.Println("Transaction monitor shutting down")
-				return
-			case <-ticker.C:
-				s.TransactionMonitorTick(ctx)
-			}
-		}
-	}()
-
-	// Start transaction recovery job
-	go s.transactionRecovery(ctx)
 
 	log.Printf("Starting Fulfiller Service with polling interval %v", s.config.PollingInterval)
 	ticker := time.NewTicker(s.config.PollingInterval)
@@ -381,8 +332,6 @@ func initializeTokens(tokens map[int]map[TokenType]Token) {
 
 			// Skip if not configured
 			if tokenAddr == (common.Address{}) {
-				log.Printf("Warning: Token %s not configured for chain %s (chainID: %d) - env var %s not found or empty",
-					tokenInfo.symbol, chain.chainName, chain.chainID, envVarName)
 				continue
 			}
 
@@ -392,23 +341,6 @@ func initializeTokens(tokens map[int]map[TokenType]Token) {
 				Symbol:  tokenInfo.symbol,
 				Type:    tokenInfo.tokenType,
 			}
-
-			log.Printf("Loaded token %s for chain %s (chainID: %d): %s",
-				tokenInfo.symbol, chain.chainName, chain.chainID, tokenAddr.Hex())
-		}
-	}
-
-	// Print summary of configured tokens
-	log.Println("Token configuration summary:")
-	for chainID, chainTokens := range tokens {
-		if len(chainTokens) == 0 {
-			log.Printf("  Chain %d: No tokens configured", chainID)
-			continue
-		}
-
-		log.Printf("  Chain %d:", chainID)
-		for tokenType, token := range chainTokens {
-			log.Printf("    %s: %s", string(tokenType), token.Address.Hex())
 		}
 	}
 }
@@ -424,258 +356,4 @@ func getEnvAddr(key string) common.Address {
 // Helper to get environment variable
 func getEnv(key string) string {
 	return os.Getenv(key)
-}
-
-// queueForRetry adds an intent to the retry queue
-//
-//nolint:unused
-func (s *Service) queueForRetry(intent models.Intent, errorType string, initialDelay time.Duration) {
-	retryJob := models.RetryJob{
-		Intent:      intent,
-		RetryCount:  0,
-		NextAttempt: time.Now().Add(initialDelay),
-		ErrorType:   errorType,
-	}
-	s.retryJobs <- retryJob
-}
-
-// TransactionMonitorTick performs a single check of transaction status
-// This can be called periodically to check transaction status
-func (s *Service) TransactionMonitorTick(ctx context.Context) {
-	// Process each chain
-	for chainID, chainConfig := range s.config.Chains {
-		// Check for timed out transactions
-		timedOutNonces := s.nonceManager.FindTimeoutTransactions(chainID)
-		for _, nonce := range timedOutNonces {
-			log.Printf("Transaction timeout detected for chain %d, nonce %d", chainID, nonce)
-			s.nonceManager.ReuseNonce(chainID, nonce)
-
-			// Update metrics
-			metrics.FulfilledIntents.WithLabelValues(
-				fmt.Sprintf("%d", chainID),
-				"timeout",
-			).Inc()
-		}
-
-		// Periodically sync nonce state with the blockchain
-		err := s.nonceManager.SyncWithBlockchain(
-			ctx,
-			chainID,
-			chainConfig.Client,
-			chainConfig.Auth.From,
-		)
-		if err != nil {
-			log.Printf("Failed to sync nonce state for chain %d: %v", chainID, err)
-		}
-	}
-}
-
-// checkAndCacheAllowance checks if there's enough token allowance and caches the result
-func (s *Service) checkAndCacheAllowance(ctx context.Context, chainConfig *blockchain.ChainConfig,
-	tokenAddress, ownerAddress, spenderAddress common.Address, requiredAmount *big.Int,
-) (bool, error) {
-	// Create cache key
-	cacheKey := AllowanceCacheKey{
-		ChainID:     chainConfig.ChainID,
-		TokenAddr:   tokenAddress,
-		OwnerAddr:   ownerAddress,
-		SpenderAddr: spenderAddress,
-	}
-
-	// Check cache first (with read lock)
-	s.allowanceMu.RLock()
-	entry, exists := s.allowanceCache[cacheKey]
-	s.allowanceMu.RUnlock()
-
-	now := time.Now()
-	// If we have a cached entry that's still valid and sufficient
-	if exists && now.Before(entry.Expiration) && entry.Allowance.Cmp(requiredAmount) >= 0 {
-		log.Printf("Using cached allowance for token %s: %s",
-			tokenAddress.Hex(), entry.Allowance.String())
-		return true, nil
-	}
-
-	// Need to check allowance from blockchain
-	abi, err := getERC20ABI()
-	if err != nil {
-		return false, fmt.Errorf("failed to get ERC20 ABI: %v", err)
-	}
-
-	// Create contract binding
-	contract := bind.NewBoundContract(
-		tokenAddress,
-		abi,
-		chainConfig.Client,
-		chainConfig.Client,
-		chainConfig.Client,
-	)
-
-	// Call allowance method
-	callOpts := &bind.CallOpts{Context: ctx}
-	var out []interface{}
-	err = contract.Call(callOpts, &out, "allowance", ownerAddress, spenderAddress)
-	if err != nil {
-		return false, fmt.Errorf("failed to check allowance: %v", err)
-	}
-
-	// Process result
-	if len(out) == 0 || out[0] == nil {
-		return false, fmt.Errorf("empty result from allowance call")
-	}
-
-	allowance, ok := out[0].(*big.Int)
-	if !ok || allowance == nil {
-		return false, fmt.Errorf("invalid allowance result type")
-	}
-
-	// Cache the result (with write lock)
-	s.allowanceMu.Lock()
-	s.allowanceCache[cacheKey] = AllowanceCacheEntry{
-		Allowance:  allowance,
-		UpdatedAt:  now,
-		Expiration: now.Add(10 * time.Minute), // Cache for 10 minutes
-	}
-	s.allowanceMu.Unlock()
-
-	// Return whether allowance is sufficient
-	return allowance.Cmp(requiredAmount) >= 0, nil
-}
-
-// Helper function to get the ERC20 ABI
-func getERC20ABI() (abi.ABI, error) {
-	return abi.JSON(strings.NewReader(`[
-		{
-			"constant": true,
-			"inputs": [
-				{
-					"name": "_owner",
-					"type": "address"
-				},
-				{
-					"name": "_spender",
-					"type": "address"
-				}
-			],
-			"name": "allowance",
-			"outputs": [
-				{
-					"name": "",
-					"type": "uint256"
-				}
-			],
-			"payable": false,
-			"stateMutability": "view",
-			"type": "function"
-		},
-		{
-			"constant": false,
-			"inputs": [
-				{
-					"name": "_spender",
-					"type": "address"
-				},
-				{
-					"name": "_value",
-					"type": "uint256"
-				}
-			],
-			"name": "approve",
-			"outputs": [
-				{
-					"name": "",
-					"type": "bool"
-				}
-			],
-			"payable": false,
-			"stateMutability": "nonpayable",
-			"type": "function"
-		}
-	]`))
-}
-
-// updateAllowanceCache updates the cache after a successful approval
-func (s *Service) updateAllowanceCache(chainID int, tokenAddr, ownerAddr, spenderAddr common.Address, newAllowance *big.Int) {
-	cacheKey := AllowanceCacheKey{
-		ChainID:     chainID,
-		TokenAddr:   tokenAddr,
-		OwnerAddr:   ownerAddr,
-		SpenderAddr: spenderAddr,
-	}
-
-	now := time.Now()
-	s.allowanceMu.Lock()
-	s.allowanceCache[cacheKey] = AllowanceCacheEntry{
-		Allowance:  newAllowance,
-		UpdatedAt:  now,
-		Expiration: now.Add(10 * time.Minute), // Cache for 10 minutes
-	}
-	s.allowanceMu.Unlock()
-}
-
-// transactionRecovery runs periodically to recover from stuck transactions
-func (s *Service) transactionRecovery(ctx context.Context) {
-	log.Println("Transaction recovery job started")
-
-	// Run every 30 minutes
-	ticker := time.NewTicker(30 * time.Minute)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("Transaction recovery job shutting down")
-			return
-		case <-ticker.C:
-			log.Println("Running transaction recovery check")
-			s.recoverTransactions(ctx)
-		}
-	}
-}
-
-// recoverTransactions attempts to recover from stuck transactions
-func (s *Service) recoverTransactions(ctx context.Context) {
-	// Process each chain
-	for chainID, chainConfig := range s.config.Chains {
-		// First sync nonce state with the blockchain
-		err := s.nonceManager.SyncWithBlockchain(
-			ctx,
-			chainID,
-			chainConfig.Client,
-			chainConfig.Auth.From,
-		)
-		if err != nil {
-			log.Printf("Failed to sync nonce state for chain %d during recovery: %v", chainID, err)
-			continue
-		}
-
-		// Find timed out transactions
-		timedOutNonces := s.nonceManager.FindTimeoutTransactions(chainID)
-		if len(timedOutNonces) == 0 {
-			log.Printf("No timed out transactions found for chain %d", chainID)
-			continue
-		}
-
-		log.Printf("Found %d timed out transactions for chain %d", len(timedOutNonces), chainID)
-
-		// Process each timed out transaction
-		for _, nonce := range timedOutNonces {
-			// For now, just mark as failed and allow reuse
-			log.Printf("Recovering from timed out transaction on chain %d with nonce %d", chainID, nonce)
-			s.nonceManager.ReuseNonce(chainID, nonce)
-
-			// Update metrics
-			metrics.FailedIntents.WithLabelValues(fmt.Sprintf("%d", chainID)).Inc()
-		}
-
-		// After recovery, sync nonce state again
-		err = s.nonceManager.SyncWithBlockchain(
-			ctx,
-			chainID,
-			chainConfig.Client,
-			chainConfig.Auth.From,
-		)
-		if err != nil {
-			log.Printf("Failed to re-sync nonce state for chain %d after recovery: %v", chainID, err)
-		}
-	}
 }
