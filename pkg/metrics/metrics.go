@@ -31,12 +31,12 @@ var (
 
 	PendingIntents = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "fulfiller_pending_intents",
-		Help: "Number of intents pending fulfillment",
+		Help: "The number of pending intents waiting to be processed",
 	})
 
 	RetryCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "fulfiller_retry_count_total",
-		Help: "Total number of retry attempts",
+		Help: "The total number of retried intent fulfillments by chain",
 	}, []string{"chain_id"})
 
 	// New metrics for error tracking
@@ -79,5 +79,17 @@ var (
 	DroppedRetries = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "fulfiller_retries_dropped_total",
 		Help: "Number of retries that were dropped due to queue capacity",
+	}, []string{"chain_id"})
+
+	// FulfilledIntents tracks the number of intents successfully fulfilled by chain
+	FulfilledIntents = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "fulfiller_fulfilled_intents_total",
+		Help: "The total number of successfully fulfilled intents by chain",
+	}, []string{"chain_id"})
+
+	// FailedIntents tracks the number of failed intent fulfillments by chain
+	FailedIntents = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "fulfiller_failed_intents_total",
+		Help: "The total number of failed intent fulfillments by chain",
 	}, []string{"chain_id"})
 )

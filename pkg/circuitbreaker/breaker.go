@@ -119,3 +119,23 @@ func (cb *CircuitBreaker) IsEnabled() bool {
 	defer cb.mu.Unlock()
 	return cb.enabled
 }
+
+// RecordSuccess records a successful operation
+// This can be used to implement an adaptive circuit breaker that resets
+// after a certain number of successful operations
+func (cb *CircuitBreaker) RecordSuccess() {
+	if !cb.enabled {
+		return
+	}
+
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+
+	// If the circuit is tripped but we've passed the reset timeout
+	// and got a successful operation, we can reset the circuit
+	if cb.tripped && time.Since(cb.tripTime) > cb.resetTimeout {
+		cb.tripped = false
+		cb.failureCount = 0
+		log.Printf("Circuit breaker reset after successful operation")
+	}
+}
