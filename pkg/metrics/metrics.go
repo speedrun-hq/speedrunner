@@ -50,6 +50,12 @@ var (
 		Help: "Total number of permanent errors that won't be retried",
 	}, []string{"chain_id", "error_type"})
 
+	// Token balance metrics
+	TokenBalance = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "fulfiller_token_balance",
+		Help: "Token balance for each chain and token type",
+	}, []string{"chain_id", "token_type"})
+
 	// Retry related metrics
 	MaxRetriesReached = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "fulfiller_max_retries_reached_total",
