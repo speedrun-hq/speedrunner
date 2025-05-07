@@ -97,7 +97,7 @@ func NewService(cfg *config.Config) (*Service, error) {
 		)
 	}
 
-	// Initialize nonce manager
+	// Initialize new nonce manager
 	nonceManager := NewNonceManager()
 
 	return &Service{

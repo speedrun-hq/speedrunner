@@ -21,6 +21,7 @@ jobs:
 
     - name: Run isolated tests
       run: |
+        go mod tidy
         make test-isolated
         
     - name: Verify build
