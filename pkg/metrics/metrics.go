@@ -54,7 +54,7 @@ var (
 	TokenBalance = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "fulfiller_token_balance",
 		Help: "Token balance for each chain and token type",
-	}, []string{"chain_id", "token_type"})
+	}, []string{"chain_name", "token_type"})
 
 	// Retry related metrics
 	MaxRetriesReached = promauto.NewCounterVec(prometheus.CounterOpts{

@@ -72,6 +72,84 @@ func (s *Server) metricsAuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// getTokenBalances retrieves balances for configured tokens on a chain
+func (s *Server) getTokenBalances(ctx context.Context, chainID int, config *blockchain.ChainConfig) map[string]interface{} {
+	tokenBalances := make(map[string]interface{})
+
+	// Map chain IDs to names
+	chainNames := map[int]string{
+		1:     "ETHEREUM",
+		137:   "POLYGON",
+		42161: "ARBITRUM",
+		43114: "AVALANCHE",
+		56:    "BSC",
+		7000:  "ZETACHAIN",
+		8453:  "BASE",
+	}
+
+	chainName := chainNames[chainID]
+	if chainName == "" {
+		log.Printf("Warning: Unknown chain ID %d", chainID)
+		return tokenBalances
+	}
+
+	// Get USDC balance
+	if usdcAddr := os.Getenv(fmt.Sprintf("%s_USDC_ADDRESS", chainName)); usdcAddr != "" {
+		if balance, err := s.getTokenBalance(ctx, config.Client, common.HexToAddress(usdcAddr), config.Auth.From); err == nil {
+			tokenBalances["USDC"] = balance.String()
+		} else {
+			log.Printf("Warning: Failed to get USDC balance for chain %s: %v", chainName, err)
+		}
+	} else {
+		log.Printf("Warning: No USDC address configured for chain %s", chainName)
+	}
+
+	// Get USDT balance
+	if usdtAddr := os.Getenv(fmt.Sprintf("%s_USDT_ADDRESS", chainName)); usdtAddr != "" {
+		if balance, err := s.getTokenBalance(ctx, config.Client, common.HexToAddress(usdtAddr), config.Auth.From); err == nil {
+			tokenBalances["USDT"] = balance.String()
+		} else {
+			log.Printf("Warning: Failed to get USDT balance for chain %s: %v", chainName, err)
+		}
+	} else {
+		log.Printf("Warning: No USDT address configured for chain %s", chainName)
+	}
+
+	return tokenBalances
+}
+
+// getChainStatus returns the status information for a specific chain
+func (s *Server) getChainStatus(ctx context.Context, chainID int, config *blockchain.ChainConfig) map[string]interface{} {
+	circuitStatus := "closed"
+	if cb, ok := s.circuitBreakers[chainID]; ok && cb.IsOpen() {
+		circuitStatus = "open"
+	}
+
+	chainStatus := map[string]interface{}{
+		"rpc_url":        config.RPCURL,
+		"intent_address": config.IntentAddress,
+		"connected":      config.Client != nil,
+		"circuit":        circuitStatus,
+	}
+
+	// Get latest block number if connected
+	if config.Client != nil {
+		blockNumber, err := config.GetLatestBlockNumber(ctx)
+		if err == nil {
+			chainStatus["latest_block"] = blockNumber
+		} else {
+			log.Printf("Warning: Failed to get latest block for chain %d: %v", chainID, err)
+		}
+
+		// Get token balances
+		if tokenBalances := s.getTokenBalances(ctx, chainID, config); len(tokenBalances) > 0 {
+			chainStatus["token_balances"] = tokenBalances
+		}
+	}
+
+	return chainStatus
+}
+
 // Start starts the health check server
 func (s *Server) Start() {
 	// Health check endpoint
@@ -99,53 +177,14 @@ func (s *Server) Start() {
 		status := make(map[string]interface{})
 
 		for chainID, config := range s.chains {
-			circuitStatus := "closed"
-			if cb, ok := s.circuitBreakers[chainID]; ok && cb.IsOpen() {
-				circuitStatus = "open"
-			}
-
-			chainStatus := map[string]interface{}{
-				"rpc_url":        config.RPCURL,
-				"intent_address": config.IntentAddress,
-				"connected":      config.Client != nil,
-				"circuit":        circuitStatus,
-			}
-
-			// Get latest block number if connected
-			if config.Client != nil {
-				blockNumber, err := config.GetLatestBlockNumber(r.Context())
-				if err == nil {
-					chainStatus["latest_block"] = blockNumber
-				}
-
-				// Get token balances
-				tokenBalances := make(map[string]interface{})
-
-				// Get USDC balance
-				if usdcAddr := os.Getenv(fmt.Sprintf("CHAIN_%d_USDC_ADDRESS", chainID)); usdcAddr != "" {
-					if balance, err := s.getTokenBalance(r.Context(), config.Client, common.HexToAddress(usdcAddr), config.Auth.From); err == nil {
-						tokenBalances["USDC"] = balance.String()
-					}
-				}
-
-				// Get USDT balance
-				if usdtAddr := os.Getenv(fmt.Sprintf("CHAIN_%d_USDT_ADDRESS", chainID)); usdtAddr != "" {
-					if balance, err := s.getTokenBalance(r.Context(), config.Client, common.HexToAddress(usdtAddr), config.Auth.From); err == nil {
-						tokenBalances["USDT"] = balance.String()
-					}
-				}
-
-				if len(tokenBalances) > 0 {
-					chainStatus["token_balances"] = tokenBalances
-				}
-			}
-
-			status[fmt.Sprintf("chain_%d", chainID)] = chainStatus
+			status[fmt.Sprintf("chain_%d", chainID)] = s.getChainStatus(r.Context(), chainID, config)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(status); err != nil {
 			log.Printf("Error encoding status JSON: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte("Failed to encode status"))
 		}
 	})
 
@@ -153,6 +192,7 @@ func (s *Server) Start() {
 	http.HandleFunc("/circuit/reset", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
+			_, _ = w.Write([]byte("Method not allowed"))
 			return
 		}
 
@@ -203,15 +243,22 @@ func (s *Server) getTokenBalance(ctx context.Context, client *ethclient.Client, 
 		return nil, fmt.Errorf("failed to get token balance: %v", err)
 	}
 
-	// Get token symbol and decimals
-	symbol, err := token.Symbol(&bind.CallOpts{Context: ctx})
-	if err != nil {
-		return balance, nil // Return balance even if we can't get symbol
+	// Get token symbol and decimals for metrics
+	symbol := "UNKNOWN"
+	decimals := uint8(18) // Default to 18 decimals if we can't get the actual value
+
+	// Try to get symbol, but don't fail if we can't
+	if symbolResult, err := token.Symbol(&bind.CallOpts{Context: ctx}); err == nil {
+		symbol = symbolResult
+	} else {
+		log.Printf("Warning: Failed to get token symbol for %s: %v", tokenAddress.Hex(), err)
 	}
 
-	decimals, err := token.Decimals(&bind.CallOpts{Context: ctx})
-	if err != nil {
-		return balance, nil // Return balance even if we can't get decimals
+	// Try to get decimals, but don't fail if we can't
+	if decimalsResult, err := token.Decimals(&bind.CallOpts{Context: ctx}); err == nil {
+		decimals = decimalsResult
+	} else {
+		log.Printf("Warning: Failed to get token decimals for %s: %v", tokenAddress.Hex(), err)
 	}
 
 	// Convert balance to float64 for Prometheus metric
@@ -224,12 +271,29 @@ func (s *Server) getTokenBalance(ctx context.Context, client *ethclient.Client, 
 	// Get chain ID
 	chainID, err := client.ChainID(ctx)
 	if err != nil {
+		log.Printf("Warning: Failed to get chain ID: %v", err)
 		return balance, nil // Return balance even if we can't get chain ID
+	}
+
+	// Map chain IDs to names for metrics
+	chainNames := map[int]string{
+		1:     "ETHEREUM",
+		137:   "POLYGON",
+		42161: "ARBITRUM",
+		43114: "AVALANCHE",
+		56:    "BSC",
+		7000:  "ZETACHAIN",
+		8453:  "BASE",
+	}
+
+	chainName := chainNames[int(chainID.Int64())]
+	if chainName == "" {
+		chainName = chainID.String() // Fallback to chain ID if name not found
 	}
 
 	// Update Prometheus metric
 	metrics.TokenBalance.WithLabelValues(
-		chainID.String(),
+		chainName,
 		symbol,
 	).Set(balanceFloat64)
 

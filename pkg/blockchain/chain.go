@@ -18,14 +18,15 @@ import (
 
 // ChainConfig holds the configuration for a specific chain
 type ChainConfig struct {
-	ChainID       int
-	RPCURL        string
-	IntentAddress string
-	Client        *ethclient.Client
-	Contract      *contracts.Intent
-	Auth          *bind.TransactOpts
-	MinFee        *big.Int
-	GasMultiplier float64
+	ChainID        int
+	RPCURL         string
+	IntentAddress  string
+	MinFee         *big.Int
+	MaxGasPrice    *big.Int
+	Client         *ethclient.Client
+	IntentContract *contracts.Intent
+	Auth           *bind.TransactOpts
+	GasMultiplier  float64
 }
 
 // NewChainConfig creates a chain configuration from environment variables
@@ -82,7 +83,7 @@ func (c *ChainConfig) Connect(privateKey string) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize contract: %v", err)
 	}
-	c.Contract = contract
+	c.IntentContract = contract
 
 	return nil
 }
