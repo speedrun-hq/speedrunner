@@ -362,12 +362,6 @@ func (s *Service) getTokenBalance(chainID int, tokenAddress common.Address) (*bi
 		return nil, fmt.Errorf("failed to create ERC20 contract: %v", err)
 	}
 
-	// Get token decimals
-	decimals, err := token.Decimals(&bind.CallOpts{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get token decimals: %v", err)
-	}
-
 	// Get raw balance
 	rawBalance, err := token.BalanceOf(nil, common.HexToAddress(s.config.FulfillerAddress))
 	if err != nil {
@@ -376,10 +370,7 @@ func (s *Service) getTokenBalance(chainID int, tokenAddress common.Address) (*bi
 
 	// Normalize balance by dividing by 10^decimals
 	balanceFloat := new(big.Float).SetInt(rawBalance)
-	decimalsFloat := new(big.Float).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals)), nil))
-	balanceFloat.Quo(balanceFloat, decimalsFloat)
 
-	log.Printf("Raw balance: %s, Normalized balance: %s", rawBalance.String(), balanceFloat.Text('f', int(decimals)))
 	return balanceFloat, nil
 }
 
@@ -595,7 +586,6 @@ func (s *Service) updateMetrics() {
 		log.Printf("Processing token balances for chain %s (ID: %d)", chainName, chainID)
 
 		for tokenType, token := range chainTokens {
-			log.Printf("Getting balance for %s on chain %s (address: %s)", tokenType, chainName, token.Address.Hex())
 
 			balance, err := s.getTokenBalance(chainID, token.Address)
 			if err != nil {
@@ -615,11 +605,12 @@ func (s *Service) updateMetrics() {
 				continue
 			}
 
-			log.Printf("balance for %s on chain %s: %s", tokenType, chainName, balance.Text('f', int(decimals)))
-
 			// Convert balance to float64 for Prometheus
+			decimalsFloat := new(big.Float).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals)), nil))
+			balance.Quo(balance, decimalsFloat)
 			balanceFloat64, _ := balance.Float64()
-			log.Printf("Setting metric for %s on chain %s: %f", tokenType, chainName, balanceFloat64)
+
+
 			metrics.TokenBalance.WithLabelValues(
 				chainName,
 				string(tokenType),
