@@ -12,9 +12,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/speedrun-hq/speedrun-fulfiller/pkg/circuitbreaker"
 	"github.com/speedrun-hq/speedrun-fulfiller/pkg/config"
+	"github.com/speedrun-hq/speedrun-fulfiller/pkg/contracts"
 	"github.com/speedrun-hq/speedrun-fulfiller/pkg/health"
 	"github.com/speedrun-hq/speedrun-fulfiller/pkg/metrics"
 	"github.com/speedrun-hq/speedrun-fulfiller/pkg/models"
@@ -54,11 +56,13 @@ type Service struct {
 	httpClient      *http.Client
 	mu              sync.Mutex
 	tokens          map[int]map[TokenType]Token
+	tokenAddressMap map[common.Address]TokenType // Map for quick token type lookups
 	workers         int
 	pendingJobs     chan models.Intent
 	retryJobs       chan models.RetryJob
 	wg              sync.WaitGroup
 	circuitBreakers map[int]*circuitbreaker.CircuitBreaker
+	nonceManager    *NonceManager
 }
 
 // NewService creates a new fulfiller service
@@ -72,6 +76,7 @@ func NewService(cfg *config.Config) (*Service, error) {
 
 	// Initialize tokens map
 	tokens := make(map[int]map[TokenType]Token)
+	tokenAddressMap := make(map[common.Address]TokenType)
 
 	// Initialize token map for each chain
 	for chainID := range cfg.Chains {
@@ -79,7 +84,7 @@ func NewService(cfg *config.Config) (*Service, error) {
 	}
 
 	// Set token addresses for each chain from environment variables
-	initializeTokens(tokens)
+	initializeTokens(tokens, tokenAddressMap)
 
 	// Initialize circuit breakers
 	circuitBreakers := make(map[int]*circuitbreaker.CircuitBreaker)
@@ -92,14 +97,19 @@ func NewService(cfg *config.Config) (*Service, error) {
 		)
 	}
 
+	// Initialize nonce manager
+	nonceManager := NewNonceManager()
+
 	return &Service{
 		config:          cfg,
 		httpClient:      createHTTPClient(),
 		tokens:          tokens,
+		tokenAddressMap: tokenAddressMap,
 		workers:         cfg.WorkerCount,
 		pendingJobs:     make(chan models.Intent, 100),   // Buffer for pending intents
 		retryJobs:       make(chan models.RetryJob, 100), // Buffer for retry jobs
 		circuitBreakers: circuitBreakers,
+		nonceManager:    nonceManager,
 	}, nil
 }
 
@@ -117,6 +127,9 @@ func (s *Service) Start(ctx context.Context) {
 
 	// Start retry handler
 	go s.retryHandler(ctx)
+
+	// Start metrics updater
+	go s.startMetricsUpdater(ctx)
 
 	log.Printf("Starting Fulfiller Service with polling interval %v", s.config.PollingInterval)
 	ticker := time.NewTicker(s.config.PollingInterval)
@@ -161,14 +174,14 @@ func (s *Service) fetchPendingIntents() ([]models.Intent, error) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	// Read the response body
+	// Read the response body regardless of status code
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	// Try to unmarshal into our wrapper struct first
@@ -177,7 +190,7 @@ func (s *Service) fetchPendingIntents() ([]models.Intent, error) {
 		// If that fails, try directly as an array
 		var intents []models.Intent
 		if err := json.Unmarshal(bodyBytes, &intents); err != nil {
-			return nil, fmt.Errorf("failed to decode intents: %v", err)
+			return nil, fmt.Errorf("failed to decode intents: %v, body: %s", err, string(bodyBytes))
 		}
 		return intents, nil
 	}
@@ -232,10 +245,26 @@ func (s *Service) fetchPendingIntents() ([]models.Intent, error) {
 func (s *Service) filterViableIntents(intents []models.Intent) []models.Intent {
 	viableIntents := []models.Intent{}
 	for _, intent := range intents {
-		// check if source chain == destination chain
+		// Check circuit breaker status
+		if breaker, exists := s.circuitBreakers[intent.DestinationChain]; exists {
+			if breaker.IsOpen() {
+				log.Printf("Skipping intent %s: Circuit breaker is open for chain %d",
+					intent.ID, intent.DestinationChain)
+				continue
+			}
+		}
+
+		// Check if source chain == destination chain
 		if intent.SourceChain == intent.DestinationChain {
 			log.Printf("Skipping intent %s: Source and destination chains are the same: %d",
 				intent.ID, intent.SourceChain)
+			continue
+		}
+
+		// Check token balance
+		if !s.hasSufficientBalance(intent) {
+			log.Printf("Skipping intent %s: Insufficient token balance for chain %d",
+				intent.ID, intent.DestinationChain)
 			continue
 		}
 
@@ -279,6 +308,81 @@ func (s *Service) filterViableIntents(intents []models.Intent) []models.Intent {
 	return viableIntents
 }
 
+// hasSufficientBalance checks if we have sufficient token balance for the intent
+func (s *Service) hasSufficientBalance(intent models.Intent) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Get token address from the intent
+	tokenAddress := common.HexToAddress(intent.Token)
+
+	// Get token type from address
+	tokenType := s.getTokenTypeFromAddress(tokenAddress)
+	if tokenType == "" {
+		log.Printf("Unknown token type for address %s", tokenAddress.Hex())
+		return false
+	}
+
+	// Get token for the destination chain
+	token, exists := s.tokens[intent.DestinationChain][tokenType]
+	if !exists {
+		log.Printf("Token %s not configured for chain %d", tokenType, intent.DestinationChain)
+		return false
+	}
+
+	// Get token balance
+	balance, err := s.getTokenBalance(intent.DestinationChain, token.Address)
+	if err != nil {
+		log.Printf("Error getting token balance: %v", err)
+		return false
+	}
+
+	// Convert intent amount to big.Int
+	amount, success := new(big.Int).SetString(intent.Amount, 10)
+	if !success {
+		log.Printf("Error parsing intent amount: %s", intent.Amount)
+		return false
+	}
+
+	// Check if we have sufficient balance
+	amountFloat := new(big.Float).SetInt(amount)
+	return balance.Cmp(amountFloat) >= 0
+}
+
+// getTokenBalance gets the token balance for a given chain and token address
+func (s *Service) getTokenBalance(chainID int, tokenAddress common.Address) (*big.Float, error) {
+	chainConfig, exists := s.config.Chains[chainID]
+	if !exists {
+		return nil, fmt.Errorf("chain configuration not found for chain %d", chainID)
+	}
+
+	// Create ERC20 contract instance
+	token, err := contracts.NewERC20(tokenAddress, chainConfig.Client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create ERC20 contract: %v", err)
+	}
+
+	// Get token decimals
+	decimals, err := token.Decimals(&bind.CallOpts{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get token decimals: %v", err)
+	}
+
+	// Get raw balance
+	rawBalance, err := token.BalanceOf(nil, common.HexToAddress(s.config.FulfillerAddress))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get token balance: %v", err)
+	}
+
+	// Normalize balance by dividing by 10^decimals
+	balanceFloat := new(big.Float).SetInt(rawBalance)
+	decimalsFloat := new(big.Float).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals)), nil))
+	balanceFloat.Quo(balanceFloat, decimalsFloat)
+
+	log.Printf("Raw balance: %s, Normalized balance: %s", rawBalance.String(), balanceFloat.Text('f', int(decimals)))
+	return balanceFloat, nil
+}
+
 // Helper function to create an HTTP client with timeouts
 func createHTTPClient() *http.Client {
 	return &http.Client{
@@ -292,7 +396,7 @@ func createHTTPClient() *http.Client {
 }
 
 // Helper function to initialize token addresses
-func initializeTokens(tokens map[int]map[TokenType]Token) {
+func initializeTokens(tokens map[int]map[TokenType]Token, tokenAddressMap map[common.Address]TokenType) {
 	// Define chain configurations
 	chainConfigs := []struct {
 		chainID   int
@@ -341,6 +445,9 @@ func initializeTokens(tokens map[int]map[TokenType]Token) {
 				Symbol:  tokenInfo.symbol,
 				Type:    tokenInfo.tokenType,
 			}
+
+			// Add to address map for quick lookups
+			tokenAddressMap[tokenAddr] = tokenInfo.tokenType
 		}
 	}
 }
@@ -356,4 +463,215 @@ func getEnvAddr(key string) common.Address {
 // Helper to get environment variable
 func getEnv(key string) string {
 	return os.Getenv(key)
+}
+
+// retryHandler handles retrying failed jobs with exponential backoff
+func (s *Service) retryHandler(ctx context.Context) {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.processRetryJobs(ctx)
+		}
+	}
+}
+
+// processRetryJobs processes jobs in the retry queue
+func (s *Service) processRetryJobs(ctx context.Context) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+	for {
+		select {
+		case job := <-s.retryJobs:
+			if now.Before(job.NextAttempt) {
+				// Put the job back in the queue
+				s.retryJobs <- job
+				// Update next retry metric
+				metrics.NextRetryIn.Set(time.Until(job.NextAttempt).Seconds())
+				return
+			}
+
+			// Check if we've exceeded max retries
+			if job.RetryCount >= s.config.MaxRetries {
+				log.Printf("Max retries exceeded for intent %s: %s", job.Intent.ID, job.ErrorType)
+				metrics.MaxRetriesReached.WithLabelValues(
+					fmt.Sprintf("%d", job.Intent.DestinationChain),
+					job.ErrorType,
+				).Inc()
+				continue
+			}
+
+			// Check circuit breaker
+			if breaker, exists := s.circuitBreakers[job.Intent.DestinationChain]; exists && breaker.IsOpen() {
+				// Put the job back in the queue
+				s.retryJobs <- job
+				metrics.RetriesSkipped.WithLabelValues(
+					fmt.Sprintf("%d", job.Intent.DestinationChain),
+					"circuit_breaker_open",
+				).Inc()
+				return
+			}
+
+			// Check gas price
+			if !s.isGasPriceAcceptable(job.Intent.DestinationChain) {
+				// Put the job back in the queue
+				s.retryJobs <- job
+				metrics.RetriesSkipped.WithLabelValues(
+					fmt.Sprintf("%d", job.Intent.DestinationChain),
+					"gas_price_too_high",
+				).Inc()
+				return
+			}
+
+			// Process the job
+			s.wg.Add(1)
+			s.pendingJobs <- job.Intent
+			metrics.RetriesExecuted.WithLabelValues(
+				fmt.Sprintf("%d", job.Intent.DestinationChain),
+				job.ErrorType,
+			).Inc()
+		default:
+			return
+		}
+	}
+}
+
+// isGasPriceAcceptable checks if the current gas price is acceptable for the chain
+func (s *Service) isGasPriceAcceptable(chainID int) bool {
+	chainConfig, exists := s.config.Chains[chainID]
+	if !exists {
+		return false
+	}
+
+	// Get current gas price
+	gasPrice, err := chainConfig.Client.SuggestGasPrice(context.Background())
+	if err != nil {
+		log.Printf("Error getting gas price for chain %d: %v", chainID, err)
+		return false
+	}
+
+	// Check if gas price is within acceptable range
+	if chainConfig.MaxGasPrice != nil && gasPrice.Cmp(chainConfig.MaxGasPrice) > 0 {
+		log.Printf("Gas price too high for chain %d: %s > %s",
+			chainID, gasPrice.String(), chainConfig.MaxGasPrice.String())
+		return false
+	}
+
+	return true
+}
+
+// getTokenTypeFromAddress determines the token type based on the token address
+func (s *Service) getTokenTypeFromAddress(address common.Address) TokenType {
+	return s.tokenAddressMap[address]
+}
+
+// updateMetrics updates Prometheus metrics
+func (s *Service) updateMetrics() {
+	log.Printf("Starting metrics update...")
+
+	// Map chain IDs to names
+	chainNames := map[int]string{
+		1:     "ETHEREUM",
+		137:   "POLYGON",
+		42161: "ARBITRUM",
+		43114: "AVALANCHE",
+		56:    "BSC",
+		7000:  "ZETACHAIN",
+		8453:  "BASE",
+	}
+
+	// Update token balance metrics
+	for chainID, chainTokens := range s.tokens {
+		chainName := chainNames[chainID]
+		if chainName == "" {
+			chainName = fmt.Sprintf("%d", chainID) // Fallback to chain ID if name not found
+		}
+		log.Printf("Processing token balances for chain %s (ID: %d)", chainName, chainID)
+
+		for tokenType, token := range chainTokens {
+			log.Printf("Getting balance for %s on chain %s (address: %s)", tokenType, chainName, token.Address.Hex())
+
+			balance, err := s.getTokenBalance(chainID, token.Address)
+			if err != nil {
+				log.Printf("Error getting token balance for %s on chain %s: %v", tokenType, chainName, err)
+				continue
+			}
+
+			// Get token decimals for logging
+			token, err := contracts.NewERC20(token.Address, s.config.Chains[chainID].Client)
+			if err != nil {
+				log.Printf("Error creating token contract for %s on chain %s: %v", tokenType, chainName, err)
+				continue
+			}
+			decimals, err := token.Decimals(&bind.CallOpts{})
+			if err != nil {
+				log.Printf("Error getting decimals for %s on chain %s: %v", tokenType, chainName, err)
+				continue
+			}
+
+			log.Printf("balance for %s on chain %s: %s", tokenType, chainName, balance.Text('f', int(decimals)))
+
+			// Convert balance to float64 for Prometheus
+			balanceFloat64, _ := balance.Float64()
+			log.Printf("Setting metric for %s on chain %s: %f", tokenType, chainName, balanceFloat64)
+			metrics.TokenBalance.WithLabelValues(
+				chainName,
+				string(tokenType),
+			).Set(balanceFloat64)
+		}
+	}
+
+	// Update gas price metrics
+	for chainID, chainConfig := range s.config.Chains {
+		chainName := chainNames[chainID]
+		if chainName == "" {
+			chainName = fmt.Sprintf("%d", chainID) // Fallback to chain ID if name not found
+		}
+
+		gasPrice, err := chainConfig.Client.SuggestGasPrice(context.Background())
+		if err != nil {
+			log.Printf("Error getting gas price for chain %s: %v", chainName, err)
+			continue
+		}
+
+		// Convert gas price to gwei for Prometheus
+		gasPriceGwei := new(big.Float).Quo(
+			new(big.Float).SetInt(gasPrice),
+			new(big.Float).SetInt(big.NewInt(1e9)),
+		)
+		gasPriceFloat64, _ := gasPriceGwei.Float64()
+
+		log.Printf("Setting gas price metric for chain %s: %f gwei", chainName, gasPriceFloat64)
+		metrics.GasPrice.WithLabelValues(
+			chainName,
+		).Set(gasPriceFloat64)
+	}
+
+	// Update retry queue size
+	queueSize := len(s.retryJobs)
+	log.Printf("Setting retry queue size metric: %d", queueSize)
+	metrics.RetryQueueSize.Set(float64(queueSize))
+
+	log.Printf("Metrics update completed")
+}
+
+// startMetricsUpdater starts a goroutine to update metrics periodically
+func (s *Service) startMetricsUpdater(ctx context.Context) {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.updateMetrics()
+		}
+	}
 }

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log"
+	"math/big"
 	"os"
 	"strconv"
 	"time"
@@ -15,11 +16,14 @@ import (
 type Config struct {
 	APIEndpoint     string
 	PollingInterval time.Duration
+	FulfillerAddress string
 	PrivateKey      string
 	Chains          map[int]*blockchain.ChainConfig
 	WorkerCount     int
 	MetricsPort     string
 	CircuitBreaker  CircuitBreakerConfig
+	MaxRetries      int
+	MaxGasPrice     *big.Int
 }
 
 // CircuitBreakerConfig holds circuit breaker configuration
@@ -55,6 +59,12 @@ func LoadConfig() (*Config, error) {
 		metricsPort = "8080" // default value
 	}
 
+	// Load Fulfiller Address
+	fulfillerAddress := os.Getenv("FULFILLER_ADDRESS")
+	if fulfillerAddress == "" {
+		fulfillerAddress = "0x0000000000000000000000000000000000000000" // default value
+	}
+
 	// Load circuit breaker configuration
 	cbEnabled, _ := strconv.ParseBool(os.Getenv("CIRCUIT_BREAKER_ENABLED"))
 	cbThreshold, err := strconv.Atoi(os.Getenv("CIRCUIT_BREAKER_THRESHOLD"))
@@ -76,6 +86,20 @@ func LoadConfig() (*Config, error) {
 		if parsedReset, err := time.ParseDuration(cbResetStr); err == nil {
 			cbReset = parsedReset
 		}
+	}
+
+	// Load max retries
+	maxRetries, err := strconv.Atoi(os.Getenv("MAX_RETRIES"))
+	if err != nil || maxRetries <= 0 {
+		maxRetries = 3 // default value
+	}
+
+	// Load max gas price
+	maxGasPriceStr := os.Getenv("MAX_GAS_PRICE")
+	var maxGasPrice *big.Int
+	if maxGasPriceStr != "" {
+		maxGasPrice = new(big.Int)
+		maxGasPrice.SetString(maxGasPriceStr, 10)
 	}
 
 	// Initialize chain configurations
@@ -112,6 +136,7 @@ func LoadConfig() (*Config, error) {
 	cfg := &Config{
 		APIEndpoint:     os.Getenv("API_ENDPOINT"),
 		PollingInterval: time.Duration(pollingInterval) * time.Second,
+		FulfillerAddress: fulfillerAddress,
 		PrivateKey:      os.Getenv("PRIVATE_KEY"),
 		Chains:          chains,
 		WorkerCount:     workerCount,
@@ -122,6 +147,8 @@ func LoadConfig() (*Config, error) {
 			WindowDuration: cbWindow,
 			ResetTimeout:   cbReset,
 		},
+		MaxRetries:  maxRetries,
+		MaxGasPrice: maxGasPrice,
 	}
 
 	// Set default API endpoint if not provided

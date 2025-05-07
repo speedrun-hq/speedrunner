@@ -64,7 +64,9 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 	// Get the Intent contract address
 	intentAddress := common.HexToAddress(chainConfig.IntentAddress)
 
-	// Get the token type from intent, default to USDC if not specified
+	// Get the token type from token address
+	
+
 	tokenType := TokenTypeUSDC
 	if intent.TokenType != "" {
 		tokenType = TokenType(strings.ToUpper(intent.TokenType))
@@ -219,7 +221,7 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 	log.Printf("Initiating fulfillment for intent %s on chain %d (token: %s, amount: %s, receiver: %s)",
 		intent.ID, intent.DestinationChain, tokenAddress.Hex(), amount.String(), receiver.Hex())
 
-	tx, err := chainConfig.Contract.Fulfill(&txOpts, intentID, tokenAddress, amount, receiver)
+	tx, err := chainConfig.IntentContract.Fulfill(&txOpts, intentID, tokenAddress, amount, receiver)
 	if err != nil {
 		log.Printf("Failed to create fulfillment transaction for intent %s: %v", intent.ID, err)
 		return fmt.Errorf("failed to fulfill intent on %d: %v", intent.DestinationChain, err)
