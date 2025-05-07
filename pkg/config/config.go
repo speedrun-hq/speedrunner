@@ -14,16 +14,16 @@ import (
 
 // Config holds the configuration for the fulfiller service
 type Config struct {
-	APIEndpoint     string
-	PollingInterval time.Duration
+	APIEndpoint      string
+	PollingInterval  time.Duration
 	FulfillerAddress string
-	PrivateKey      string
-	Chains          map[int]*blockchain.ChainConfig
-	WorkerCount     int
-	MetricsPort     string
-	CircuitBreaker  CircuitBreakerConfig
-	MaxRetries      int
-	MaxGasPrice     *big.Int
+	PrivateKey       string
+	Chains           map[int]*blockchain.ChainConfig
+	WorkerCount      int
+	MetricsPort      string
+	CircuitBreaker   CircuitBreakerConfig
+	MaxRetries       int
+	MaxGasPrice      *big.Int
 }
 
 // CircuitBreakerConfig holds circuit breaker configuration
@@ -134,13 +134,13 @@ func LoadConfig() (*Config, error) {
 	}
 
 	cfg := &Config{
-		APIEndpoint:     os.Getenv("API_ENDPOINT"),
-		PollingInterval: time.Duration(pollingInterval) * time.Second,
+		APIEndpoint:      os.Getenv("API_ENDPOINT"),
+		PollingInterval:  time.Duration(pollingInterval) * time.Second,
 		FulfillerAddress: fulfillerAddress,
-		PrivateKey:      os.Getenv("PRIVATE_KEY"),
-		Chains:          chains,
-		WorkerCount:     workerCount,
-		MetricsPort:     metricsPort,
+		PrivateKey:       os.Getenv("PRIVATE_KEY"),
+		Chains:           chains,
+		WorkerCount:      workerCount,
+		MetricsPort:      metricsPort,
 		CircuitBreaker: CircuitBreakerConfig{
 			Enabled:        cbEnabled,
 			Threshold:      cbThreshold,

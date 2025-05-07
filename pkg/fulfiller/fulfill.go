@@ -65,7 +65,6 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 	intentAddress := common.HexToAddress(chainConfig.IntentAddress)
 
 	// Get the token type from token address
-	
 
 	tokenType := TokenTypeUSDC
 	if intent.TokenType != "" {
