@@ -30,6 +30,7 @@ type ChainConfig struct {
 }
 
 // NewChainConfig creates a chain configuration from environment variables
+// TODO: should return error for invalid values to avoid unexpected behavior
 func NewChainConfig(chainID int, rpcURL string, intentAddress string, minFee string) *ChainConfig {
 	minFeeBig := big.NewInt(0)
 	if minFee != "" {
