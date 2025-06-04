@@ -610,7 +610,6 @@ func (s *Service) updateMetrics() {
 			balance.Quo(balance, decimalsFloat)
 			balanceFloat64, _ := balance.Float64()
 
-
 			metrics.TokenBalance.WithLabelValues(
 				chainName,
 				string(tokenType),

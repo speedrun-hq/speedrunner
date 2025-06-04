@@ -7,6 +7,10 @@ all: setup test-isolated
 setup:
 	go mod tidy
 
+# Run fmt
+format:
+	go fmt ./...
+
 # Run isolated tests that don't depend on go-ethereum
 test-isolated:
 	go test -v ./pkg/fulfiller -run "TestSimple|TestIsolated|TestApproval"
