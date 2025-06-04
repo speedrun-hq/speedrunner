@@ -5,7 +5,6 @@ import (
 	"log"
 	"math/big"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -41,104 +40,77 @@ func LoadConfig() (*Config, error) {
 		log.Printf("Warning: .env file not found, using environment variables")
 	}
 
-	// Load polling interval
-	pollingInterval, err := strconv.Atoi(os.Getenv("POLLING_INTERVAL"))
-	if err != nil || pollingInterval <= 0 {
-		pollingInterval = 5 // default value
+	pollingInterval, err := GetEnvPollingInterval()
+	if err != nil {
+		return nil, err
 	}
 
-	// Load worker count
-	workerCount, err := strconv.Atoi(os.Getenv("WORKER_COUNT"))
-	if err != nil || workerCount <= 0 {
-		workerCount = 5 // default value
+	workerCount, err := GetEnvWorkerCount()
+	if err != nil {
+		return nil, err
 	}
 
-	// Load metrics port
-	metricsPort := os.Getenv("METRICS_PORT")
-	if metricsPort == "" {
-		metricsPort = "8080" // default value
+	metricsPort, err := GetEnvMetricsPort()
+	if err != nil {
+		return nil, err
 	}
 
-	// Load Fulfiller Address
-	fulfillerAddress := os.Getenv("FULFILLER_ADDRESS")
-	if fulfillerAddress == "" {
-		fulfillerAddress = "0x0000000000000000000000000000000000000000" // default value
+	fulfillerAddress, err := GetEnvFulfillerAddress()
+	if err != nil {
+		return nil, err
 	}
 
-	// Load circuit breaker configuration
-	cbEnabled, _ := strconv.ParseBool(os.Getenv("CIRCUIT_BREAKER_ENABLED"))
-	cbThreshold, err := strconv.Atoi(os.Getenv("CIRCUIT_BREAKER_THRESHOLD"))
-	if err != nil || cbThreshold <= 0 {
-		cbThreshold = 5 // Default: trip after 5 failures
+	cbEnabled, err := GetEnvCircuitBreakerEnabled()
+	if err != nil {
+		return nil, err
 	}
 
-	cbWindowStr := os.Getenv("CIRCUIT_BREAKER_WINDOW")
-	cbWindow := 5 * time.Minute // Default: 5 minute window
-	if cbWindowStr != "" {
-		if parsedWindow, err := time.ParseDuration(cbWindowStr); err == nil {
-			cbWindow = parsedWindow
-		}
+	cbThreshold, err := GetEnvCircuitBreakerThreshold()
+	if err != nil {
+		return nil, err
 	}
 
-	cbResetStr := os.Getenv("CIRCUIT_BREAKER_RESET")
-	cbReset := 15 * time.Minute // Default: 15 minute reset timeout
-	if cbResetStr != "" {
-		if parsedReset, err := time.ParseDuration(cbResetStr); err == nil {
-			cbReset = parsedReset
-		}
+	cbWindow, err := GetEnvCircuitBreakerWindow()
+	if err != nil {
+		return nil, err
 	}
 
-	// Load max retries
-	maxRetries, err := strconv.Atoi(os.Getenv("MAX_RETRIES"))
-	if err != nil || maxRetries <= 0 {
-		maxRetries = 3 // default value
+	cbReset, err := GetEnvCircuitBreakerReset()
+	if err != nil {
+		return nil, err
 	}
 
-	// Load max gas price
-	maxGasPriceStr := os.Getenv("MAX_GAS_PRICE")
-	var maxGasPrice *big.Int
-	if maxGasPriceStr != "" {
-		maxGasPrice = new(big.Int)
-		maxGasPrice.SetString(maxGasPriceStr, 10)
+	maxRetries, err := GetEnvMaxRetries()
+	if err != nil {
+		return nil, err
+	}
+
+	maxGasPrice, err := GetEnvMaxGasPrice()
+	if err != nil {
+		return nil, err
+	}
+
+	apiEndpoint, err := GetEnvAPIEndpoint()
+	if err != nil {
+		return nil, err
 	}
 
 	// Initialize chain configurations
-	chains := make(map[int]*blockchain.ChainConfig)
-
-	// Define chain configurations
-	chainConfigs := []struct {
-		chainID      int
-		rpcEnvVar    string
-		intentEnvVar string
-		minFeeEnvVar string
-	}{
-		{8453, "BASE_RPC_URL", "BASE_INTENT_ADDRESS", "BASE_MIN_FEE"},
-		{42161, "ARBITRUM_RPC_URL", "ARBITRUM_INTENT_ADDRESS", "ARBITRUM_MIN_FEE"},
-		{137, "POLYGON_RPC_URL", "POLYGON_INTENT_ADDRESS", "POLYGON_MIN_FEE"},
-		{1, "ETHEREUM_RPC_URL", "ETHEREUM_INTENT_ADDRESS", "ETHEREUM_MIN_FEE"},
-		{43114, "AVALANCHE_RPC_URL", "AVALANCHE_INTENT_ADDRESS", "AVALANCHE_MIN_FEE"},
-		{56, "BSC_RPC_URL", "BSC_INTENT_ADDRESS", "BSC_MIN_FEE"},
-		{7000, "ZETACHAIN_RPC_URL", "ZETACHAIN_INTENT_ADDRESS", "ZETACHAIN_MIN_FEE"},
+	chainConfigs := make(map[int]*blockchain.ChainConfig)
+	chainConfigList, err := GetEnvChainConfigs(mainnet)
+	if err != nil {
+		return nil, err
 	}
-
-	// Set up each chain configuration
-	for _, config := range chainConfigs {
-		if rpcURL := os.Getenv(config.rpcEnvVar); rpcURL != "" {
-			chains[config.chainID] = blockchain.NewChainConfig(
-				config.chainID,
-				rpcURL,
-				os.Getenv(config.intentEnvVar),
-				os.Getenv(config.minFeeEnvVar),
-			)
-		}
+	for _, chainConfig := range chainConfigList {
+		chainConfigs[chainConfig.ChainID] = chainConfig
 	}
 
 	cfg := &Config{
-		APIEndpoint:      os.Getenv("API_ENDPOINT"),
-		PollingInterval:  time.Duration(pollingInterval) * time.Second,
+		APIEndpoint:      apiEndpoint,
+		PollingInterval:  pollingInterval,
 		FulfillerAddress: fulfillerAddress,
 		PrivateKey:       os.Getenv("PRIVATE_KEY"),
-		Chains:           chains,
+		Chains:           chainConfigs,
 		WorkerCount:      workerCount,
 		MetricsPort:      metricsPort,
 		CircuitBreaker: CircuitBreakerConfig{
@@ -149,11 +121,6 @@ func LoadConfig() (*Config, error) {
 		},
 		MaxRetries:  maxRetries,
 		MaxGasPrice: maxGasPrice,
-	}
-
-	// Set default API endpoint if not provided
-	if cfg.APIEndpoint == "" {
-		cfg.APIEndpoint = "http://localhost:8080"
 	}
 
 	// Validate required environment variables

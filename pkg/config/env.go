@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/speedrun-hq/speedrun-fulfiller/pkg/blockchain"
 	"math/big"
 	"net/url"
@@ -11,6 +12,10 @@ import (
 )
 
 // Environment variables for configuration
+// POLLING_INTERVAL
+// WORKER_COUNT
+// METRICS_PORT
+// FULFILLER_ADDRESS
 // CIRCUIT_BREAKER_ENABLED
 // CIRCUIT_BREAKER_THRESHOLD
 // CIRCUIT_BREAKER_WINDOW
@@ -48,6 +53,18 @@ const (
 
 	// DefaultNetwork is the default blockchain network to connect to
 	DefaultNetwork = mainnet
+
+	// DefaultPollingInterval defines the default polling interval in seconds
+	DefaultPollingInterval = 5
+
+	// DefaultWorkerCount defines the default number of workers to process intents
+	DefaultWorkerCount = 5
+
+	// DefaultMetricsPort defines the default port for the metrics server
+	DefaultMetricsPort = "8080"
+
+	// DefaultFulfillerAddress defines the default fulfiller address
+	DefaultFulfillerAddress = "0x0000000000000000000000000000000000000000"
 
 	// DefaultCircuitBreakerEnabled defines whether the circuit breaker is enabled
 	DefaultCircuitBreakerEnabled = true
@@ -141,6 +158,70 @@ func GetEnvNetwork() (string, error) {
 	return network, nil
 }
 
+// GetEnvPollingInterval returns the polling interval in seconds from environment variables
+func GetEnvPollingInterval() (time.Duration, error) {
+	pollingInterval := os.Getenv("POLLING_INTERVAL")
+	if pollingInterval == "" {
+		return time.Duration(DefaultPollingInterval) * time.Second, nil
+	}
+
+	// use atoi
+	interval, err := strconv.Atoi(pollingInterval)
+	if err != nil {
+		return 0, fmt.Errorf("invalid POLLING_INTERVAL value: %s, must be an integer", pollingInterval)
+	}
+	if interval <= 0 {
+		return 0, fmt.Errorf("POLLING_INTERVAL must be greater than 0")
+	}
+	return time.Duration(interval) * time.Second, nil
+}
+
+// GetEnvWorkerCount returns the number of workers from environment variables
+func GetEnvWorkerCount() (int, error) {
+	workerCount := os.Getenv("WORKER_COUNT")
+	if workerCount == "" {
+		return DefaultWorkerCount, nil
+	}
+
+	// use atoi
+	count, err := strconv.Atoi(workerCount)
+	if err != nil {
+		return 0, fmt.Errorf("invalid WORKER_COUNT value: %s, must be an integer", workerCount)
+	}
+	if count <= 0 {
+		return 0, fmt.Errorf("WORKER_COUNT must be greater than 0")
+	}
+	return count, nil
+}
+
+// GetEnvMetricsPort returns the metrics server port from environment variables
+func GetEnvMetricsPort() (string, error) {
+	metricsPort := os.Getenv("METRICS_PORT")
+	if metricsPort == "" {
+		return DefaultMetricsPort, nil
+	}
+
+	// Validate port format
+	if _, err := strconv.Atoi(metricsPort); err != nil {
+		return "", fmt.Errorf("invalid METRICS_PORT value: %s, must be a valid integer", metricsPort)
+	}
+	return metricsPort, nil
+}
+
+// GetEnvFulfillerAddress returns the fulfiller address from environment variables
+func GetEnvFulfillerAddress() (string, error) {
+	fulfillerAddress := os.Getenv("FULFILLER_ADDRESS")
+	if fulfillerAddress == "" {
+		return DefaultFulfillerAddress, nil
+	}
+
+	// Validate Ethereum address format
+	if !common.IsHexAddress(fulfillerAddress) {
+		return "", fmt.Errorf("invalid FULFILLER_ADDRESS value: %s, must be a valid Ethereum address", fulfillerAddress)
+	}
+	return fulfillerAddress, nil
+}
+
 // GetEnvCircuitBreakerEnabled returns whether the circuit breaker is enabled from environment variables
 func GetEnvCircuitBreakerEnabled() (bool, error) {
 	enabled := os.Getenv("CIRCUIT_BREAKER_ENABLED")
@@ -164,7 +245,6 @@ func GetEnvCircuitBreakerThreshold() (int, error) {
 		return DefaultCircuitBreakerThreshold, nil
 	}
 
-	// use atoi
 	thresholdInt, err := strconv.Atoi(threshold)
 	if err != nil {
 		return 0, fmt.Errorf("invalid CIRCUIT_BREAKER_THRESHOLD value: %s, must be an integer", threshold)
@@ -176,31 +256,33 @@ func GetEnvCircuitBreakerThreshold() (int, error) {
 }
 
 // GetEnvCircuitBreakerWindow returns the circuit breaker window duration from environment variables
-func GetEnvCircuitBreakerWindow() (string, error) {
+func GetEnvCircuitBreakerWindow() (time.Duration, error) {
 	window := os.Getenv("CIRCUIT_BREAKER_WINDOW")
 	if window == "" {
-		return DefaultCircuitBreakerWindow, nil
+		return 0, nil
 	}
 
 	// Validate duration format
-	if _, err := time.ParseDuration(window); err != nil {
-		return "", fmt.Errorf("invalid CIRCUIT_BREAKER_WINDOW value: %s, must be a valid duration string", window)
+	parsed, err := time.ParseDuration(window)
+	if err != nil {
+		return 0, fmt.Errorf("invalid CIRCUIT_BREAKER_WINDOW value: %s, must be a valid duration string", window)
 	}
-	return window, nil
+	return parsed, nil
 }
 
 // GetEnvCircuitBreakerReset returns the circuit breaker reset timeout from environment variables
-func GetEnvCircuitBreakerReset() (string, error) {
+func GetEnvCircuitBreakerReset() (time.Duration, error) {
 	reset := os.Getenv("CIRCUIT_BREAKER_RESET")
 	if reset == "" {
-		return DefaultCircuitBreakerReset, nil
+		return 0, nil
 	}
 
 	// Validate duration format
-	if _, err := time.ParseDuration(reset); err != nil {
-		return "", fmt.Errorf("invalid CIRCUIT_BREAKER_RESET value: %s, must be a valid duration string", reset)
+	parsed, err := time.ParseDuration(reset)
+	if err != nil {
+		return 0, fmt.Errorf("invalid CIRCUIT_BREAKER_RESET value: %s, must be a valid duration string", reset)
 	}
-	return reset, nil
+	return parsed, nil
 }
 
 // GetEnvMaxRetries returns the maximum number of retries from environment variables
@@ -210,7 +292,6 @@ func GetEnvMaxRetries() (int, error) {
 		return DefaultMaxRetries, nil
 	}
 
-	// use atoi
 	maxRetriesInt, err := strconv.Atoi(maxRetries)
 	if err != nil {
 		return 0, fmt.Errorf("invalid MAX_RETRIES value: %s, must be an integer", maxRetries)
