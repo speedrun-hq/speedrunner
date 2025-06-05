@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/speedrun-hq/speedrun-fulfiller/pkg/logger"
 	"io"
 	"log"
 	"math/big"
@@ -62,6 +63,7 @@ type Service struct {
 	wg              sync.WaitGroup
 	circuitBreakers map[int]*circuitbreaker.CircuitBreaker
 	nonceManager    *NonceManager
+	logger          logger.Logger
 }
 
 // NewService creates a new fulfiller service
@@ -109,6 +111,7 @@ func NewService(cfg *config.Config) (*Service, error) {
 		retryJobs:       make(chan models.RetryJob, 100), // Buffer for retry jobs
 		circuitBreakers: circuitBreakers,
 		nonceManager:    nonceManager,
+		logger:          logger.NewStdLogger(true, logger.InfoLevel),
 	}, nil
 }
 

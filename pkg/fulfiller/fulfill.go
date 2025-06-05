@@ -27,7 +27,7 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 	// Update gas price before transaction
 	finalGasPrice, err := chainConfig.UpdateGasPrice(context.Background())
 	if err != nil {
-		log.Printf("Warning: Failed to update gas price for chain %d: %v", intent.DestinationChain, err)
+		s.logger.DebugWithChain(intent.DestinationChain, "Failed to update gas price: %s", err.Error())
 		// Continue with default/previous gas price
 	} else {
 		// Update metric (convert to gwei for readability)
@@ -37,7 +37,7 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 		)
 		gweiFlt, _ := gasPriceGwei.Float64()
 		metrics.GasPrice.WithLabelValues(fmt.Sprintf("%d", intent.DestinationChain)).Set(gweiFlt)
-		log.Printf("Updated gas price for chain %d: %.2f gwei", intent.DestinationChain, gweiFlt)
+		s.logger.DebugWithChain(intent.DestinationChain, "Updated gas price: %.2f gwei", gweiFlt)
 	}
 
 	// Convert intent ID to bytes32
@@ -56,7 +56,7 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 		amount = new(big.Int).Mul(amount, big.NewInt(1000000000000))
 	}
 
-	log.Printf("Fulfilling intent %s on chain %d with amount %s", intent.ID, intent.DestinationChain, amount.String())
+	s.logger.NoticeWithChain(intent.DestinationChain, "Fulfilling intent %s with amount %s", intent.ID, amount.String())
 
 	// Convert addresses
 	receiver := common.HexToAddress(intent.Recipient)
@@ -86,12 +86,15 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 	}
 
 	tokenAddress := token.Address
-	log.Printf("Using token %s (%s) address %s for chain %d", token.Symbol, tokenType, tokenAddress.Hex(), intent.DestinationChain)
+	s.logger.DebugWithChain(intent.DestinationChain, "Using token %s (%s) address %s",
+		token.Symbol, tokenType, tokenAddress.Hex(),
+	)
 
 	// First, approve the token transfer
 	// We need to approve the Intent contract to spend our tokens
-	log.Printf("Checking token allowance for intent %s on chain %d (token: %s, spender: %s)",
-		intent.ID, intent.DestinationChain, tokenAddress.Hex(), intentAddress.Hex())
+	s.logger.DebugWithChain(intent.DestinationChain, "Checking token allowance for intent %s (token: %s, spender: %s)",
+		intent.ID, tokenAddress.Hex(), intentAddress.Hex(),
+	)
 
 	erc20ABI, err := abi.JSON(strings.NewReader(`[
 		{

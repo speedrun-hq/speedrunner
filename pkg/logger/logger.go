@@ -29,6 +29,16 @@ const (
 	Zeta
 )
 
+var chainIDMap = map[int]Chain{
+	1:     Eth,
+	56:    Bsc,
+	137:   Pol,
+	42161: Arb,
+	43114: Ava,
+	8453:  Base,
+	7000:  Zeta,
+}
+
 var prefixes = map[Chain]string{
 	None: "",
 	Eth:  "[ETH]  ",
@@ -55,19 +65,19 @@ var colors = map[Chain]color.Attribute{
 type Logger interface {
 	// Info logs an informational message.
 	Info(format string, args ...interface{})
-	InfoWithChain(chain Chain, format string, args ...interface{})
+	InfoWithChain(chainID int, format string, args ...interface{})
 
 	// Error logs an error message.
 	Error(format string, args ...interface{})
-	ErrorWithChain(chain Chain, format string, args ...interface{})
+	ErrorWithChain(chainID int, format string, args ...interface{})
 
 	// Debug logs a debug message.
 	Debug(format string, args ...interface{})
-	DebugWithChain(chain Chain, format string, args ...interface{})
+	DebugWithChain(chainID int, format string, args ...interface{})
 
 	// Notice logs a notice message.
 	Notice(format string, args ...interface{})
-	NoticeWithChain(chain Chain, format string, args ...interface{})
+	NoticeWithChain(chainID int, format string, args ...interface{})
 }
 
 // EmptyLogger is a simple implementation of the Logger interface that does nothing.
@@ -75,14 +85,14 @@ type EmptyLogger struct{}
 
 var _ Logger = (*EmptyLogger)(nil)
 
-func (l *EmptyLogger) Info(_ string, _ ...interface{})                        {}
-func (l *EmptyLogger) InfoWithChain(_ Chain, _ string, _ ...interface{})      {}
-func (l *EmptyLogger) Error(_ string, _ ...interface{})                       {}
-func (l *EmptyLogger) ErrorWithChain(_ Chain, _ string, _ ...interface{})     {}
-func (l *EmptyLogger) Debug(_ string, _ ...interface{})                       {}
-func (l *EmptyLogger) DebugWithChain(_ Chain, _ string, _ ...interface{})     {}
-func (l *EmptyLogger) Notice(_ string, _ ...interface{})                      {}
-func (l *EmptyLogger) NoticeWithChain(_ Chain, _ string, args ...interface{}) {}
+func (l *EmptyLogger) Info(_ string, _ ...interface{})                   {}
+func (l *EmptyLogger) InfoWithChain(_ int, _ string, _ ...interface{})   {}
+func (l *EmptyLogger) Error(_ string, _ ...interface{})                  {}
+func (l *EmptyLogger) ErrorWithChain(_ int, _ string, _ ...interface{})  {}
+func (l *EmptyLogger) Debug(_ string, _ ...interface{})                  {}
+func (l *EmptyLogger) DebugWithChain(_ int, _ string, _ ...interface{})  {}
+func (l *EmptyLogger) Notice(_ string, _ ...interface{})                 {}
+func (l *EmptyLogger) NoticeWithChain(_ int, _ string, _ ...interface{}) {}
 
 // StdLogger is a standard implementation of the Logger interface that logs messages to the console.
 type StdLogger struct {
@@ -130,9 +140,12 @@ func (l *StdLogger) Info(format string, args ...interface{}) {
 	}
 }
 
-func (l *StdLogger) InfoWithChain(chain Chain, format string, args ...interface{}) {
+func (l *StdLogger) InfoWithChain(chainID int, format string, args ...interface{}) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+
+	chain := chainIDMap[chainID]
+
 	if l.level <= InfoLevel {
 		log.Printf(l.formatMessage(InfoLevel, chain, format), args...)
 	}
@@ -146,9 +159,12 @@ func (l *StdLogger) Error(format string, args ...interface{}) {
 	}
 }
 
-func (l *StdLogger) ErrorWithChain(chain Chain, format string, args ...interface{}) {
+func (l *StdLogger) ErrorWithChain(chainID int, format string, args ...interface{}) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+
+	chain := chainIDMap[chainID]
+
 	if l.level <= ErrorLevel {
 		log.Printf(l.formatMessage(ErrorLevel, chain, format), args...)
 	}
@@ -162,9 +178,12 @@ func (l *StdLogger) Debug(format string, args ...interface{}) {
 	}
 }
 
-func (l *StdLogger) DebugWithChain(chain Chain, format string, args ...interface{}) {
+func (l *StdLogger) DebugWithChain(chainID int, format string, args ...interface{}) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+
+	chain := chainIDMap[chainID]
+
 	if l.level <= DebugLevel {
 		log.Printf(l.formatMessage(DebugLevel, chain, format), args...)
 	}
@@ -178,9 +197,12 @@ func (l *StdLogger) Notice(format string, args ...interface{}) {
 	}
 }
 
-func (l *StdLogger) NoticeWithChain(chain Chain, format string, args ...interface{}) {
+func (l *StdLogger) NoticeWithChain(chainID int, format string, args ...interface{}) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+
+	chain := chainIDMap[chainID]
+
 	if l.level <= NoticeLevel {
 		log.Printf(l.formatMessage(NoticeLevel, chain, format), args...)
 	}
