@@ -11,42 +11,6 @@ import (
 	"time"
 )
 
-// Environment variables for configuration
-// POLLING_INTERVAL
-// WORKER_COUNT
-// METRICS_PORT
-// FULFILLER_ADDRESS
-// CIRCUIT_BREAKER_ENABLED
-// CIRCUIT_BREAKER_THRESHOLD
-// CIRCUIT_BREAKER_WINDOW
-// CIRCUIT_BREAKER_RESET
-// MAX_RETRIES
-// MAX_GAS_PRICE
-// NETWORK
-// BASE_RPC_URL
-// BASE_INTENT_ADDRESS
-// BASE_MIN_FEE
-// ARBITRUM_RPC_URL
-// ARBITRUM_INTENT_ADDRESS
-// ARBITRUM_MIN_FEE
-// POLYGON_RPC_URL
-// POLYGON_INTENT_ADDRESS
-// POLYGON_MIN_FEE
-// ETHEREUM_RPC_URL
-// ETHEREUM_INTENT_ADDRESS
-// ETHEREUM_MIN_FEE
-// AVALANCHE_RPC_URL
-// AVALANCHE_INTENT_ADDRESS
-// AVALANCHE_MIN_FEE
-// BSC_RPC_URL
-// BSC_INTENT_ADDRESS
-// BSC_MIN_FEE
-// ZETACHAIN_RPC_URL
-// ZETACHAIN_INTENT_ADDRESS
-// ZETACHAIN_MIN_FEE
-// API_ENDPOINT
-// PRIVATE_KEY
-
 const (
 	mainnet = "mainnet"
 	testnet = "testnet"
@@ -73,10 +37,10 @@ const (
 	DefaultCircuitBreakerThreshold = 5
 
 	// DefaultCircuitBreakerWindow defines the time window for the circuit breaker
-	DefaultCircuitBreakerWindow = "5m"
+	DefaultCircuitBreakerWindow = 5
 
 	// DefaultCircuitBreakerReset defines the reset timeout for the circuit breaker
-	DefaultCircuitBreakerReset = "15m"
+	DefaultCircuitBreakerReset = 15
 
 	// DefaultMaxRetries defines the maximum number of retries for failed operations
 	DefaultMaxRetries = 10
@@ -259,7 +223,7 @@ func GetEnvCircuitBreakerThreshold() (int, error) {
 func GetEnvCircuitBreakerWindow() (time.Duration, error) {
 	window := os.Getenv("CIRCUIT_BREAKER_WINDOW")
 	if window == "" {
-		return 0, nil
+		return DefaultCircuitBreakerWindow * time.Second, nil
 	}
 
 	// Validate duration format
@@ -274,7 +238,7 @@ func GetEnvCircuitBreakerWindow() (time.Duration, error) {
 func GetEnvCircuitBreakerReset() (time.Duration, error) {
 	reset := os.Getenv("CIRCUIT_BREAKER_RESET")
 	if reset == "" {
-		return 0, nil
+		return DefaultCircuitBreakerReset * time.Second, nil
 	}
 
 	// Validate duration format
