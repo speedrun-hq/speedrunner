@@ -8,7 +8,6 @@ import (
 	"log"
 	"math/big"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
@@ -243,7 +242,7 @@ func (s *Service) fetchPendingIntents() ([]models.Intent, error) {
 
 // filterViableIntents filters intents that are viable for fulfillment
 func (s *Service) filterViableIntents(intents []models.Intent) []models.Intent {
-	viableIntents := []models.Intent{}
+	var viableIntents []models.Intent
 	for _, intent := range intents {
 		// Check circuit breaker status
 		if breaker, exists := s.circuitBreakers[intent.DestinationChain]; exists {
@@ -258,6 +257,14 @@ func (s *Service) filterViableIntents(intents []models.Intent) []models.Intent {
 		if intent.SourceChain == intent.DestinationChain {
 			log.Printf("Skipping intent %s: Source and destination chains are the same: %d",
 				intent.ID, intent.SourceChain)
+			continue
+		}
+
+		// Check if intent is more than 2 minutes old, only process recent intent
+		// TODO: allow to configure this in config
+		intentAge := time.Since(intent.CreatedAt)
+		if intentAge > 2*time.Minute {
+			log.Printf("Skipping intent %s: Intent is too old (age: %s)", intent.ID, intentAge.String())
 			continue
 		}
 
@@ -388,19 +395,9 @@ func createHTTPClient() *http.Client {
 
 // Helper function to initialize token addresses
 func initializeTokens(tokens map[int]map[TokenType]Token, tokenAddressMap map[common.Address]TokenType) {
-	// Define chain configurations
-	chainConfigs := []struct {
-		chainID   int
-		chainName string
-	}{
-		{8453, "BASE"},
-		{42161, "ARBITRUM"},
-		{137, "POLYGON"},
-		{1, "ETHEREUM"},
-		{43114, "AVALANCHE"},
-		{56, "BSC"},
-		{7000, "ZETACHAIN"},
-	}
+	// Define chains
+	// TODO: centralize in config
+	chainList := []int{8453, 42161, 137, 1, 43114, 56, 7000}
 
 	// Define token types
 	tokenTypes := []struct {
@@ -412,26 +409,33 @@ func initializeTokens(tokens map[int]map[TokenType]Token, tokenAddressMap map[co
 	}
 
 	// Initialize tokens for each chain and token type
-	for _, chain := range chainConfigs {
+	for _, chainID := range chainList {
 		// Ensure the chain map exists
-		if _, exists := tokens[chain.chainID]; !exists {
-			tokens[chain.chainID] = make(map[TokenType]Token)
+		if _, exists := tokens[chainID]; !exists {
+			tokens[chainID] = make(map[TokenType]Token)
 		}
 
 		for _, tokenInfo := range tokenTypes {
-			// Construct environment variable name
-			envVarName := fmt.Sprintf("%s_%s_ADDRESS", chain.chainName, tokenInfo.symbol)
+			var tokenAddrStr string
 
-			// Get token address from environment
-			tokenAddr := getEnvAddr(envVarName)
-
-			// Skip if not configured
+			switch tokenInfo.tokenType {
+			case TokenTypeUSDC:
+				tokenAddrStr = config.GetUSDCAddress(chainID)
+			case TokenTypeUSDT:
+				tokenAddrStr = config.GetUSDTAddress(chainID)
+			default:
+				tokenAddrStr = ""
+			}
+			if tokenAddrStr == "" {
+				continue
+			}
+			tokenAddr := common.HexToAddress(tokenAddrStr)
 			if tokenAddr == (common.Address{}) {
 				continue
 			}
 
 			// Initialize token
-			tokens[chain.chainID][tokenInfo.tokenType] = Token{
+			tokens[chainID][tokenInfo.tokenType] = Token{
 				Address: tokenAddr,
 				Symbol:  tokenInfo.symbol,
 				Type:    tokenInfo.tokenType,
@@ -441,19 +445,6 @@ func initializeTokens(tokens map[int]map[TokenType]Token, tokenAddressMap map[co
 			tokenAddressMap[tokenAddr] = tokenInfo.tokenType
 		}
 	}
-}
-
-// Helper to get address from environment
-func getEnvAddr(key string) common.Address {
-	if val := getEnv(key); val != "" {
-		return common.HexToAddress(val)
-	}
-	return common.Address{}
-}
-
-// Helper to get environment variable
-func getEnv(key string) string {
-	return os.Getenv(key)
 }
 
 // retryHandler handles retrying failed jobs with exponential backoff
@@ -466,13 +457,13 @@ func (s *Service) retryHandler(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.processRetryJobs(ctx)
+			s.processRetryJobs()
 		}
 	}
 }
 
 // processRetryJobs processes jobs in the retry queue
-func (s *Service) processRetryJobs(ctx context.Context) {
+func (s *Service) processRetryJobs() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -566,23 +557,9 @@ func (s *Service) getTokenTypeFromAddress(address common.Address) TokenType {
 func (s *Service) updateMetrics() {
 	log.Printf("Starting metrics update...")
 
-	// Map chain IDs to names
-	chainNames := map[int]string{
-		1:     "ETHEREUM",
-		137:   "POLYGON",
-		42161: "ARBITRUM",
-		43114: "AVALANCHE",
-		56:    "BSC",
-		7000:  "ZETACHAIN",
-		8453:  "BASE",
-	}
-
 	// Update token balance metrics
 	for chainID, chainTokens := range s.tokens {
-		chainName := chainNames[chainID]
-		if chainName == "" {
-			chainName = fmt.Sprintf("%d", chainID) // Fallback to chain ID if name not found
-		}
+		chainName := config.GetChainName(chainID)
 		log.Printf("Processing token balances for chain %s (ID: %d)", chainName, chainID)
 
 		for tokenType, token := range chainTokens {
@@ -619,9 +596,9 @@ func (s *Service) updateMetrics() {
 
 	// Update gas price metrics
 	for chainID, chainConfig := range s.config.Chains {
-		chainName := chainNames[chainID]
+		chainName := config.GetChainName(chainID)
 		if chainName == "" {
-			chainName = fmt.Sprintf("%d", chainID) // Fallback to chain ID if name not found
+			chainName = "Unknown"
 		}
 
 		gasPrice, err := chainConfig.Client.SuggestGasPrice(context.Background())
