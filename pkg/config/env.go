@@ -62,6 +62,9 @@ const (
 
 	BaseMainnetChainID       = 8453
 	BaseMainnetIntentAddress = "0x999fce149FD078DCFaa2C681e060e00F528552f4"
+	BaseMainnetUSDCAddress   = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+	BaseMainnetUSDTAddress   = "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb"
+
 	DefaultBaseRPCURL        = "https://mainnet.base.org"
 	DefaultBaseMainnetMinFee = "100000"
 
@@ -69,6 +72,9 @@ const (
 
 	ArbitrumMainnetChainID       = 42161
 	ArbitrumMainnetIntentAddress = "0xD6B0E2a8D115cCA2823c5F80F8416644F3970dD2"
+	ArbitrumMainnetUSDCAddress   = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+	ArbitrumMainnetUSDTAddress   = "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"
+
 	DefaultArbitrumMainnetRPCURL = "https://arb1.arbitrum.io/rpc"
 	DefaultArbitrumMainnetMinFee = "100000"
 
@@ -76,6 +82,7 @@ const (
 
 	PolygonMainnetChainID       = 137
 	PolygonMainnetIntentAddress = "0x4017717c550E4B6E61048D412a718D6A8078d264"
+
 	DefaultPolygonMainnetRPCURL = "https://polygon-rpc.com"
 	DefaultPolygonMainnetMinFee = "100000"
 
@@ -83,6 +90,7 @@ const (
 
 	EthereumMainnetChainID       = 1
 	EthereumMainnetIntentAddress = "0x951AB2A5417a51eB5810aC44BC1fC716995C1CAB"
+
 	DefaultEthereumMainnetRPCURL = "https://eth.llamarpc.com"
 	DefaultEthereumMainnetMinFee = "1000000"
 
@@ -90,6 +98,7 @@ const (
 
 	AvalancheMainnetChainID       = 43114
 	AvalancheMainnetIntentAddress = "0x9a22A7d337aF1801BEEcDBE7f4f04BbD09F9E5bb"
+
 	DefaultAvalancheMainnetRPCURL = "https://avalanche-c-chain-rpc.publicnode.com"
 	DefaultAvalancheMainnetMinFee = "100000"
 
@@ -97,6 +106,7 @@ const (
 
 	BSCMainnetChainID       = 56
 	BSCMainnetIntentAddress = "0x68282fa70a32E52711d437b6c5984B714Eec3ED0"
+
 	DefaultBSCMainnetRPCURL = "https://bsc-dataseed.bnbchain.org"
 	DefaultBSCMainnetMinFee = "400000000000000000"
 
@@ -104,6 +114,7 @@ const (
 
 	ZetaChainMainnetChainID       = 7000
 	ZetaChainMainnetIntentAddress = "0x986e2db1aF08688dD3C9311016026daD15969e09"
+
 	DefaultZetaChainMainnetRPCURL = "https://zetachain-evm.blockpi.network/v1/rpc/public"
 	DefaultZetaChainMainnetMinFee = "100000"
 )

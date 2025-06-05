@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/speedrun-hq/speedrun-fulfiller/pkg/config"
 	"log"
 	"math/big"
 	"net/http"
@@ -73,29 +74,18 @@ func (s *Server) metricsAuthMiddleware(next http.Handler) http.Handler {
 }
 
 // getTokenBalances retrieves balances for configured tokens on a chain
-func (s *Server) getTokenBalances(ctx context.Context, chainID int, config *blockchain.ChainConfig) map[string]interface{} {
+func (s *Server) getTokenBalances(ctx context.Context, chainID int, chainConfig *blockchain.ChainConfig) map[string]interface{} {
 	tokenBalances := make(map[string]interface{})
 
-	// Map chain IDs to names
-	chainNames := map[int]string{
-		1:     "ETHEREUM",
-		137:   "POLYGON",
-		42161: "ARBITRUM",
-		43114: "AVALANCHE",
-		56:    "BSC",
-		7000:  "ZETACHAIN",
-		8453:  "BASE",
-	}
-
-	chainName := chainNames[chainID]
+	chainName := config.GetChainName(chainID)
 	if chainName == "" {
 		log.Printf("Warning: Unknown chain ID %d", chainID)
 		return tokenBalances
 	}
 
 	// Get USDC balance
-	if usdcAddr := os.Getenv(fmt.Sprintf("%s_USDC_ADDRESS", chainName)); usdcAddr != "" {
-		if balance, err := s.getTokenBalance(ctx, config.Client, common.HexToAddress(usdcAddr), config.Auth.From); err == nil {
+	if usdcAddr := config.GetUSDCAddress(chainID); usdcAddr != "" {
+		if balance, err := s.getTokenBalance(ctx, chainConfig.Client, common.HexToAddress(usdcAddr), chainConfig.Auth.From); err == nil {
 			tokenBalances["USDC"] = balance.String()
 		} else {
 			log.Printf("Warning: Failed to get USDC balance for chain %s: %v", chainName, err)
@@ -105,8 +95,8 @@ func (s *Server) getTokenBalances(ctx context.Context, chainID int, config *bloc
 	}
 
 	// Get USDT balance
-	if usdtAddr := os.Getenv(fmt.Sprintf("%s_USDT_ADDRESS", chainName)); usdtAddr != "" {
-		if balance, err := s.getTokenBalance(ctx, config.Client, common.HexToAddress(usdtAddr), config.Auth.From); err == nil {
+	if usdtAddr := config.GetUSDTAddress(chainID); usdtAddr != "" {
+		if balance, err := s.getTokenBalance(ctx, chainConfig.Client, common.HexToAddress(usdtAddr), chainConfig.Auth.From); err == nil {
 			tokenBalances["USDT"] = balance.String()
 		} else {
 			log.Printf("Warning: Failed to get USDT balance for chain %s: %v", chainName, err)
@@ -275,25 +265,9 @@ func (s *Server) getTokenBalance(ctx context.Context, client *ethclient.Client, 
 		return balance, nil // Return balance even if we can't get chain ID
 	}
 
-	// Map chain IDs to names for metrics
-	chainNames := map[int]string{
-		1:     "ETHEREUM",
-		137:   "POLYGON",
-		42161: "ARBITRUM",
-		43114: "AVALANCHE",
-		56:    "BSC",
-		7000:  "ZETACHAIN",
-		8453:  "BASE",
-	}
-
-	chainName := chainNames[int(chainID.Int64())]
-	if chainName == "" {
-		chainName = chainID.String() // Fallback to chain ID if name not found
-	}
-
 	// Update Prometheus metric
 	metrics.TokenBalance.WithLabelValues(
-		chainName,
+		config.GetChainName(int(chainID.Int64())),
 		symbol,
 	).Set(balanceFloat64)
 
