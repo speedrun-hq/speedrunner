@@ -33,58 +33,14 @@ The codebase is organized into the following packages:
 ## Prerequisites
 
 - Go 1.24 or higher
-- Access to Ethereum RPC endpoints for the networks you want to support
-- Private key for transaction signing
-- Environment variables configuration
-
-## Installation
-
-1. Clone the repository:
-```bash
-git clone https://github.com/speedrun-hq/speedrun-fulfiller.git
-cd speedrun-fulfiller
-```
-
-2. Install dependencies:
-```bash
-go mod download
-```
+- For the networks you want to support:
+  - Access to an RPC endpoint 
+  - Private key of a funded hot-wallet
 
 ## Configuration
 
-Create a `.env` file in the root directory with the following variables:
-```
-# API Configuration
-API_ENDPOINT=<your-api-endpoint>
-POLLING_INTERVAL=<polling-interval-in-seconds>
-
-# Wallet Configuration
-PRIVATE_KEY=<your-private-key>
-
-# Performance and Optimization Settings
-WORKER_COUNT=10
-METRICS_PORT=8080
-
-# Circuit Breaker Configuration
-CIRCUIT_BREAKER_ENABLED=true
-CIRCUIT_BREAKER_THRESHOLD=5
-CIRCUIT_BREAKER_WINDOW=5m
-CIRCUIT_BREAKER_RESET=15m
-```
-
-For each chain you want to support, add the following configuration:
-```
-# Chain Configuration for <CHAIN_NAME>
-<CHAIN_NAME>_RPC_URL=<rpc-url>
-<CHAIN_NAME>_INTENT_ADDRESS=<intent-contract-address>
-<CHAIN_NAME>_MIN_FEE=<minimum-fee>
-<CHAIN_NAME>_GAS_MULTIPLIER=<gas-price-multiplier>
-
-# Token addresses for <CHAIN_NAME>
-<CHAIN_NAME>_USDC_ADDRESS=<usdc-token-address>
-<CHAIN_NAME>_USDT_ADDRESS=<usdt-token-address>
-# Add more tokens as needed
-```
+The fulfiller process can be configured using environment variables.
+An example `.env.example` is provided in the repository. You can create a `.env` file based on this example.
 
 ## Building
 
@@ -113,8 +69,6 @@ The service exposes Prometheus metrics on the configured metrics port (default: 
 
 We provide multiple ways to run tests, with a focus on isolated tests that don't depend on external blockchain libraries.
 
-### Using Make (Recommended)
-
 ```bash
 # Run isolated tests (no ethereum dependencies)
 make test-isolated
@@ -126,17 +80,7 @@ make coverage
 make test
 ```
 
-### Using Go Test Directly
-
-```bash
-# Run isolated tests only
-go test -v ./pkg/fulfiller/approval_test.go ./pkg/fulfiller/simple_test.go ./pkg/fulfiller/isolated_test.go
-
-# Run a specific test file
-go test -v ./pkg/fulfiller/approval_test.go
-```
-
-## Testing Approach
+### Testing Approach
 
 We've implemented two testing approaches:
 
@@ -159,26 +103,4 @@ If you encounter errors with the `github.com/fjl/memsize` dependency (e.g., `inv
 
 ## License
 
-This project is licensed under the terms specified in the LICENSE file.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Multi-Token Support
-
-The fulfiller now supports multiple tokens per chain. Currently, it supports USDC and USDT tokens on all supported chains, with the flexibility to add more in the future.
-
-To add a new token to a chain, simply add the token address to your environment variables:
-
-```
-# Example token configuration for Ethereum
-ETHEREUM_USDC_ADDRESS=0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48
-ETHEREUM_USDT_ADDRESS=0xdac17f958d2ee523a2206206994597c13d831ec7
-
-# Example token configuration for Polygon
-POLYGON_USDC_ADDRESS=0x2791bca1f2de4661ed88a30c99a7a9449aa84174
-POLYGON_USDT_ADDRESS=0xc2132d05d31c914a87c6611c10748aeb04b58e8f
-```
-
-Intents should specify a `token_type` field with values like "USDC" or "USDT" to indicate which token to use. If not specified, the fulfiller defaults to USDC.
+MIT
