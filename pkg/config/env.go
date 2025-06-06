@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/speedrun-hq/speedrun-fulfiller/pkg/blockchain"
+	"github.com/speedrun-hq/speedrun-fulfiller/pkg/logger"
 	"math/big"
 	"net/url"
 	"os"
@@ -50,6 +51,11 @@ const (
 
 	// DefaultAPIEndpoint defines the default API endpoint for the Speedrun service
 	DefaultAPIEndpoint = "https://api.speedrun.exchange"
+
+	// logging default options
+
+	DefaultLogLevel    = logger.InfoLevel
+	DefaultLogColoring = true
 
 	// Network specific values
 	// Note: intent address values are not prefixed with "Default"
@@ -303,6 +309,43 @@ func GetEnvAPIEndpoint() (string, error) {
 		return "", fmt.Errorf("invalid API_ENDPOINT value: %s, must be a valid URL", apiEndpoint)
 	}
 	return apiEndpoint, nil
+}
+
+// GetEnvLogLevel returns the logging level from environment variables
+func GetEnvLogLevel() (logger.Level, error) {
+	logLevel := os.Getenv("LOG_LEVEL")
+	if logLevel == "" {
+		return DefaultLogLevel, nil
+	}
+
+	switch logLevel {
+	case "debug":
+		return logger.DebugLevel, nil
+	case "info":
+		return logger.InfoLevel, nil
+	case "error":
+		return logger.ErrorLevel, nil
+	case "notice":
+		return logger.NoticeLevel, nil
+	default:
+		return 0, fmt.Errorf("invalid LOG_LEVEL value: %s, must be 'debug', 'info', 'warn', or 'error'", logLevel)
+	}
+}
+
+// GetEnvLogColoring returns whether logging coloring is enabled from environment variables
+func GetEnvLogColoring() (bool, error) {
+	logColoring := os.Getenv("LOG_COLORING")
+	if logColoring == "" {
+		return DefaultLogColoring, nil
+	}
+
+	if logColoring == "true" {
+		return true, nil
+	} else if logColoring == "false" {
+		return false, nil
+	}
+
+	return false, fmt.Errorf("invalid LOG_COLORING value: %s, must be 'true' or 'false'", logColoring)
 }
 
 // GetEnvChainConfigs returns the chain configurations for all supported network based on the environment variables and network type

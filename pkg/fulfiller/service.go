@@ -67,7 +67,7 @@ type Service struct {
 
 // NewService creates a new fulfiller service
 func NewService(cfg *config.Config) (*Service, error) {
-	logger := logger.NewStdLogger(true, logger.InfoLevel)
+	logger := logger.NewStdLogger(cfg.LoggerConfig.Coloring, cfg.LoggerConfig.Level)
 
 	// Connect to blockchain clients
 	for _, chainConfig := range cfg.Chains {
