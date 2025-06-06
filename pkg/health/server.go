@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/speedrun-hq/speedrun-fulfiller/pkg/config"
-	"log"
+	"github.com/speedrun-hq/speedrun-fulfiller/pkg/logger"
 	"math/big"
 	"net/http"
 	"os"
@@ -28,15 +28,22 @@ type Server struct {
 	chains          map[int]*blockchain.ChainConfig
 	circuitBreakers map[int]*circuitbreaker.CircuitBreaker
 	metricsAPIKey   string
+	logger          logger.Logger
 }
 
 // NewServer creates a new health check server
-func NewServer(port string, chains map[int]*blockchain.ChainConfig, circuitBreakers map[int]*circuitbreaker.CircuitBreaker) *Server {
+func NewServer(
+	port string,
+	chains map[int]*blockchain.ChainConfig,
+	circuitBreakers map[int]*circuitbreaker.CircuitBreaker,
+	logger logger.Logger,
+) *Server {
 	return &Server{
 		port:            port,
 		chains:          chains,
 		circuitBreakers: circuitBreakers,
 		metricsAPIKey:   os.Getenv("METRICS_API_KEY"),
+		logger:          logger,
 	}
 }
 
@@ -79,7 +86,7 @@ func (s *Server) getTokenBalances(ctx context.Context, chainID int, chainConfig 
 
 	chainName := config.GetChainName(chainID)
 	if chainName == "" {
-		log.Printf("Warning: Unknown chain ID %d", chainID)
+		s.logger.Info("Warning: Unknown chain ID %d", chainID)
 		return tokenBalances
 	}
 
@@ -88,10 +95,10 @@ func (s *Server) getTokenBalances(ctx context.Context, chainID int, chainConfig 
 		if balance, err := s.getTokenBalance(ctx, chainConfig.Client, common.HexToAddress(usdcAddr), chainConfig.Auth.From); err == nil {
 			tokenBalances["USDC"] = balance.String()
 		} else {
-			log.Printf("Warning: Failed to get USDC balance for chain %s: %v", chainName, err)
+			s.logger.Info("Warning: Failed to get USDC balance for chain %s: %v", chainName, err)
 		}
 	} else {
-		log.Printf("Warning: No USDC address configured for chain %s", chainName)
+		s.logger.Info("Warning: No USDC address configured for chain %s", chainName)
 	}
 
 	// Get USDT balance
@@ -99,10 +106,10 @@ func (s *Server) getTokenBalances(ctx context.Context, chainID int, chainConfig 
 		if balance, err := s.getTokenBalance(ctx, chainConfig.Client, common.HexToAddress(usdtAddr), chainConfig.Auth.From); err == nil {
 			tokenBalances["USDT"] = balance.String()
 		} else {
-			log.Printf("Warning: Failed to get USDT balance for chain %s: %v", chainName, err)
+			s.logger.Info("Warning: Failed to get USDT balance for chain %s: %v", chainName, err)
 		}
 	} else {
-		log.Printf("Warning: No USDT address configured for chain %s", chainName)
+		s.logger.Info("Warning: No USDT address configured for chain %s", chainName)
 	}
 
 	return tokenBalances
@@ -128,7 +135,7 @@ func (s *Server) getChainStatus(ctx context.Context, chainID int, config *blockc
 		if err == nil {
 			chainStatus["latest_block"] = blockNumber
 		} else {
-			log.Printf("Warning: Failed to get latest block for chain %d: %v", chainID, err)
+			s.logger.InfoWithChain(chainID, "Warning: Failed to get latest block for chain %d: %v", err)
 		}
 
 		// Get token balances
@@ -172,7 +179,7 @@ func (s *Server) Start() {
 
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(status); err != nil {
-			log.Printf("Error encoding status JSON: %v", err)
+			s.logger.Error("Error encoding status JSON: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte("Failed to encode status"))
 		}
@@ -215,9 +222,9 @@ func (s *Server) Start() {
 	// Expose Prometheus metrics with API key authentication
 	http.Handle("/metrics", s.metricsAuthMiddleware(promhttp.Handler()))
 
-	log.Printf("Starting health and metrics server on port %s", s.port)
+	s.logger.Notice("Starting health and metrics server on port %s", s.port)
 	if err := http.ListenAndServe(":"+s.port, nil); err != nil {
-		log.Printf("Health server error: %v", err)
+		s.logger.Error("Health server error: %v", err)
 	}
 }
 
@@ -241,14 +248,15 @@ func (s *Server) getTokenBalance(ctx context.Context, client *ethclient.Client, 
 	if symbolResult, err := token.Symbol(&bind.CallOpts{Context: ctx}); err == nil {
 		symbol = symbolResult
 	} else {
-		log.Printf("Warning: Failed to get token symbol for %s: %v", tokenAddress.Hex(), err)
+		s.logger.Info("Warning: Failed to get token symbol for %s: %v", tokenAddress.Hex(), err)
 	}
 
 	// Try to get decimals, but don't fail if we can't
 	if decimalsResult, err := token.Decimals(&bind.CallOpts{Context: ctx}); err == nil {
 		decimals = decimalsResult
 	} else {
-		log.Printf("Warning: Failed to get token decimals for %s: %v", tokenAddress.Hex(), err)
+		// TODO: error might need to be handled here
+		s.logger.Info("Warning: Failed to get token decimals for %s: %v", tokenAddress.Hex(), err)
 	}
 
 	// Convert balance to float64 for Prometheus metric
@@ -261,7 +269,7 @@ func (s *Server) getTokenBalance(ctx context.Context, client *ethclient.Client, 
 	// Get chain ID
 	chainID, err := client.ChainID(ctx)
 	if err != nil {
-		log.Printf("Warning: Failed to get chain ID: %v", err)
+		s.logger.Info("Warning: Failed to get chain ID: %v", err)
 		return balance, nil // Return balance even if we can't get chain ID
 	}
 

@@ -1,7 +1,7 @@
 package circuitbreaker
 
 import (
-	"log"
+	"github.com/speedrun-hq/speedrun-fulfiller/pkg/logger"
 	"sync"
 	"time"
 )
@@ -17,15 +17,23 @@ type CircuitBreaker struct {
 	tripped       bool
 	tripTime      time.Time
 	mu            sync.Mutex
+	logger        logger.Logger
 }
 
 // NewCircuitBreaker creates a new circuit breaker
-func NewCircuitBreaker(enabled bool, threshold int, window time.Duration, resetTimeout time.Duration) *CircuitBreaker {
+func NewCircuitBreaker(
+	enabled bool,
+	threshold int,
+	window time.Duration,
+	resetTimeout time.Duration,
+	logger logger.Logger,
+) *CircuitBreaker {
 	return &CircuitBreaker{
 		enabled:       enabled,
 		failThreshold: threshold,
 		failureWindow: window,
 		resetTimeout:  resetTimeout,
+		logger:        logger,
 	}
 }
 
@@ -43,7 +51,7 @@ func (cb *CircuitBreaker) RecordFailure() bool {
 	// If the circuit is already tripped, check if it's time to try again
 	if cb.tripped {
 		if time.Since(cb.tripTime) > cb.resetTimeout {
-			log.Printf("Circuit breaker: Attempting to reset after timeout")
+			cb.logger.Info("Circuit breaker: Attempting to reset after timeout")
 			cb.tripped = false
 			cb.failureCount = 0
 		} else {
@@ -64,7 +72,7 @@ func (cb *CircuitBreaker) RecordFailure() bool {
 	if cb.failureCount >= cb.failThreshold {
 		cb.tripped = true
 		cb.tripTime = now
-		log.Printf("Circuit breaker tripped: %d failures in window", cb.failureCount)
+		cb.logger.Info("Circuit breaker tripped: %d failures in window", cb.failureCount)
 		return true
 	}
 

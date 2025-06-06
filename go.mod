@@ -4,6 +4,7 @@ go 1.24
 
 require (
 	github.com/ethereum/go-ethereum v1.15.8
+	github.com/fatih/color v1.16.0
 	github.com/joho/godotenv v1.5.1
 	github.com/prometheus/client_golang v1.22.0
 	github.com/stretchr/testify v1.10.0
