@@ -3,7 +3,6 @@ package fulfiller
 import (
 	"context"
 	"fmt"
-	"log"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -46,11 +45,11 @@ func (s *Service) SetNonceInTxOpts(chainID int, nonce uint64, txOpts *bind.Trans
 func (s *Service) MarkTransactionFinished(chainID int, txHash common.Hash, success bool) {
 	if success {
 		if err := s.nonceManager.MarkTransactionConfirmed(chainID, txHash); err != nil {
-			log.Printf("Warning: Failed to mark transaction %s as confirmed for chain %d: %v", txHash.Hex(), chainID, err)
+			s.logger.InfoWithChain(chainID, "Warning: Failed to mark transaction %s as confirmed: %v", txHash.Hex(), err)
 		}
 	} else {
 		if err := s.nonceManager.MarkTransactionFailed(chainID, txHash); err != nil {
-			log.Printf("Warning: Failed to mark transaction %s as failed for chain %d: %v", txHash.Hex(), chainID, err)
+			s.logger.InfoWithChain(chainID, "Warning: Failed to mark transaction %s as failed: %v", txHash.Hex(), err)
 		}
 	}
 }

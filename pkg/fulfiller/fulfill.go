@@ -3,7 +3,6 @@ package fulfiller
 import (
 	"context"
 	"fmt"
-	"log"
 	"math/big"
 	"strings"
 
@@ -27,7 +26,7 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 	// Update gas price before transaction
 	finalGasPrice, err := chainConfig.UpdateGasPrice(context.Background())
 	if err != nil {
-		log.Printf("Warning: Failed to update gas price for chain %d: %v", intent.DestinationChain, err)
+		s.logger.DebugWithChain(intent.DestinationChain, "Failed to update gas price: %s", err.Error())
 		// Continue with default/previous gas price
 	} else {
 		// Update metric (convert to gwei for readability)
@@ -37,7 +36,7 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 		)
 		gweiFlt, _ := gasPriceGwei.Float64()
 		metrics.GasPrice.WithLabelValues(fmt.Sprintf("%d", intent.DestinationChain)).Set(gweiFlt)
-		log.Printf("Updated gas price for chain %d: %.2f gwei", intent.DestinationChain, gweiFlt)
+		s.logger.DebugWithChain(intent.DestinationChain, "Updated gas price: %.2f gwei", gweiFlt)
 	}
 
 	// Convert intent ID to bytes32
@@ -56,7 +55,7 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 		amount = new(big.Int).Mul(amount, big.NewInt(1000000000000))
 	}
 
-	log.Printf("Fulfilling intent %s on chain %d with amount %s", intent.ID, intent.DestinationChain, amount.String())
+	s.logger.InfoWithChain(intent.DestinationChain, "Fulfilling intent %s with amount %s", intent.ID, amount.String())
 
 	// Convert addresses
 	receiver := common.HexToAddress(intent.Recipient)
@@ -86,13 +85,17 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 	}
 
 	tokenAddress := token.Address
-	log.Printf("Using token %s (%s) address %s for chain %d", token.Symbol, tokenType, tokenAddress.Hex(), intent.DestinationChain)
+	s.logger.DebugWithChain(intent.DestinationChain, "Using token %s (%s) address %s",
+		token.Symbol, tokenType, tokenAddress.Hex(),
+	)
 
 	// First, approve the token transfer
 	// We need to approve the Intent contract to spend our tokens
-	log.Printf("Checking token allowance for intent %s on chain %d (token: %s, spender: %s)",
-		intent.ID, intent.DestinationChain, tokenAddress.Hex(), intentAddress.Hex())
+	s.logger.DebugWithChain(intent.DestinationChain, "Checking token allowance for intent %s (token: %s, spender: %s)",
+		intent.ID, tokenAddress.Hex(), intentAddress.Hex(),
+	)
 
+	// TODO: move to contracts package
 	erc20ABI, err := abi.JSON(strings.NewReader(`[
 		{
 			"constant": true,
@@ -169,14 +172,19 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 	var out []interface{}
 	err = erc20Contract.Call(callOpts, &out, "allowance", txOpts.From, intentAddress)
 	if err != nil {
-		log.Printf("Failed to check allowance for intent %s: %v", intent.ID, err)
+		s.logger.DebugWithChain(
+			intent.DestinationChain,
+			"Failed to check allowance for intent %s: %v",
+			intent.ID,
+			err,
+		)
 		// Continue with approval (default behavior)
 	} else if len(out) > 0 {
 		if allowance, ok := out[0].(*big.Int); ok && allowance != nil {
-			log.Printf("Current allowance for intent %s: %s (needed: %s)",
+			s.logger.DebugWithChain(intent.DestinationChain, "Current allowance for intent %s: %s (needed: %s)",
 				intent.ID, allowance.String(), amount.String())
 			if allowance.Cmp(amount) >= 0 {
-				log.Printf("Existing allowance is sufficient for intent %s, skipping approval",
+				s.logger.DebugWithChain(intent.DestinationChain, "Existing allowance is sufficient for intent %s, skipping approval",
 					intent.ID)
 				needsApproval = false
 			}
@@ -185,8 +193,8 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 
 	// Proceed with approval if needed
 	if needsApproval {
-		log.Printf("Initiating token approval for intent %s on chain %d (token: %s, spender: %s)",
-			intent.ID, intent.DestinationChain, tokenAddress.Hex(), intentAddress.Hex())
+		s.logger.InfoWithChain(intent.DestinationChain, "Initiating token approval for intent %s (token: %s, spender: %s)",
+			intent.ID, tokenAddress.Hex(), intentAddress.Hex())
 
 		// Use max uint256 value for unlimited approval to avoid future approval transactions
 		maxUint256 := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
@@ -194,53 +202,52 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 		// Send the approve transaction with unlimited amount
 		approveTx, err := erc20Contract.Transact(&txOpts, "approve", intentAddress, maxUint256)
 		if err != nil {
-			log.Printf("Failed to create approval transaction for intent %s: %v", intent.ID, err)
+			s.logger.ErrorWithChain(intent.DestinationChain, "Failed to create approval transaction for intent %s: %v", intent.ID, err)
 			return fmt.Errorf("failed to approve token transfer: %v", err)
 		}
 
-		log.Printf("Approval transaction sent for intent %s: %s", intent.ID, approveTx.Hash().Hex())
+		s.logger.InfoWithChain(intent.DestinationChain, "Approval transaction sent for intent %s: %s", intent.ID, approveTx.Hash().Hex())
 
 		// Wait for the approve transaction to be mined
 		approveReceipt, err := bind.WaitMined(context.Background(), chainConfig.Client, approveTx)
 		if err != nil {
-			log.Printf("Failed to mine approval transaction for intent %s: %v", intent.ID, err)
+			s.logger.ErrorWithChain(intent.DestinationChain, "Failed to mine approval transaction for intent %s: %v", intent.ID, err)
 			return fmt.Errorf("failed to wait for approve transaction: %v", err)
 		}
 
 		if approveReceipt.Status == 0 {
-			log.Printf("Approval transaction failed for intent %s: %s", intent.ID, approveTx.Hash().Hex())
+			s.logger.ErrorWithChain(intent.DestinationChain, "Approval transaction failed for intent %s: %s", intent.ID, approveTx.Hash().Hex())
 			return fmt.Errorf("approve transaction failed")
 		}
 
-		log.Printf("Approval successful for intent %s: %s (gas used: %d)",
+		s.logger.InfoWithChain(intent.DestinationChain, "Approval successful for intent %s: %s (gas used: %d)",
 			intent.ID, approveTx.Hash().Hex(), approveReceipt.GasUsed)
 	}
 
 	// Now call the contract's fulfill function with current gas price
-	log.Printf("Initiating fulfillment for intent %s on chain %d (token: %s, amount: %s, receiver: %s)",
-		intent.ID, intent.DestinationChain, tokenAddress.Hex(), amount.String(), receiver.Hex())
+	s.logger.NoticeWithChain(intent.DestinationChain, "Initiating fulfillment for intent %s (token: %s, amount: %s, receiver: %s)",
+		intent.ID, tokenAddress.Hex(), amount.String(), receiver.Hex())
 
 	tx, err := chainConfig.IntentContract.Fulfill(&txOpts, intentID, tokenAddress, amount, receiver)
 	if err != nil {
-		log.Printf("Failed to create fulfillment transaction for intent %s: %v", intent.ID, err)
+		s.logger.ErrorWithChain(intent.DestinationChain, "Failed to create fulfillment transaction for intent %s: %v", intent.ID, err)
 		return fmt.Errorf("failed to fulfill intent on %d: %v", intent.DestinationChain, err)
 	}
 
-	log.Printf("Fulfillment transaction sent for intent %s: %s", intent.ID, tx.Hash().Hex())
+	s.logger.InfoWithChain(intent.DestinationChain, "Fulfillment transaction created for intent %s: %s")
 
 	// Wait for the transaction to be mined
 	receipt, err := bind.WaitMined(context.Background(), chainConfig.Client, tx)
 	if err != nil {
-		log.Printf("Failed to mine fulfillment transaction for intent %s: %v", intent.ID, err)
+		s.logger.ErrorWithChain(intent.DestinationChain, "Failed to wait for transaction on intent %s: %v", intent.ID, err)
 		return fmt.Errorf("failed to wait for transaction on %d: %v", intent.DestinationChain, err)
 	}
 
 	if receipt.Status == 0 {
-		log.Printf("Fulfillment transaction failed for intent %s: %s", intent.ID, tx.Hash().Hex())
+		s.logger.ErrorWithChain(intent.DestinationChain, "Fulfillment transaction failed for intent %s: %s", intent.ID, tx.Hash().Hex())
 		return fmt.Errorf("transaction failed on %d", intent.DestinationChain)
 	}
 
-	log.Printf("Fulfillment successful for intent %s: %s (gas used: %d)",
-		intent.ID, tx.Hash().Hex(), receipt.GasUsed)
+	s.logger.NoticeWithChain(intent.DestinationChain, "Fulfillment transaction successful for intent %s: %s")
 	return nil
 }

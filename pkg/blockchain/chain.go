@@ -3,7 +3,6 @@ package blockchain
 import (
 	"context"
 	"fmt"
-	"log"
 	"math/big"
 	"os"
 	"strconv"
@@ -37,7 +36,7 @@ func NewChainConfig(chainID int, rpcURL string, intentAddress string, minFee str
 		var success bool
 		minFeeBig, success = new(big.Int).SetString(minFee, 10)
 		if !success {
-			log.Printf("Warning: Invalid min fee format for chain %d: %s", chainID, minFee)
+			// TODO: return error here
 			minFeeBig = big.NewInt(0)
 		}
 	}
@@ -118,9 +117,6 @@ func (c *ChainConfig) UpdateGasPrice(ctx context.Context) (*big.Int, error) {
 	if c.Auth != nil {
 		c.Auth.GasPrice = finalGasPrice
 	}
-
-	log.Printf("Updated gas price for chain %d: %s wei (multiplier: %.2f)",
-		c.ChainID, finalGasPrice.String(), c.GasMultiplier)
 
 	return finalGasPrice, nil
 }

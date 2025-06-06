@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"github.com/speedrun-hq/speedrun-fulfiller/pkg/logger"
 	"log"
 	"math/big"
 	"os"
@@ -23,6 +24,7 @@ type Config struct {
 	CircuitBreaker   CircuitBreakerConfig
 	MaxRetries       int
 	MaxGasPrice      *big.Int
+	LoggerConfig     LoggerConfig
 }
 
 // CircuitBreakerConfig holds circuit breaker configuration
@@ -31,6 +33,12 @@ type CircuitBreakerConfig struct {
 	Threshold      int
 	WindowDuration time.Duration
 	ResetTimeout   time.Duration
+}
+
+// LoggerConfig holds the configuration for logging
+type LoggerConfig struct {
+	Level    logger.Level
+	Coloring bool
 }
 
 // LoadConfig loads the configuration from environment variables
@@ -95,6 +103,16 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 
+	logLever, err := GetEnvLogLevel()
+	if err != nil {
+		return nil, err
+	}
+
+	logColoring, err := GetEnvLogColoring()
+	if err != nil {
+		return nil, err
+	}
+
 	// Initialize chain configurations
 	chainConfigs := make(map[int]*blockchain.ChainConfig)
 	chainConfigList, err := GetEnvChainConfigs(mainnet)
@@ -118,6 +136,10 @@ func LoadConfig() (*Config, error) {
 			Threshold:      cbThreshold,
 			WindowDuration: cbWindow,
 			ResetTimeout:   cbReset,
+		},
+		LoggerConfig: LoggerConfig{
+			Level:    logLever,
+			Coloring: logColoring,
 		},
 		MaxRetries:  maxRetries,
 		MaxGasPrice: maxGasPrice,
