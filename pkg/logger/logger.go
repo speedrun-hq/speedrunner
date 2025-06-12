@@ -39,7 +39,7 @@ var chainIDMap = map[int]Chain{
 	7000:  Zeta,
 }
 
-var prefixes = map[Chain]string{
+var chainPrefixes = map[Chain]string{
 	None: "",
 	Eth:  "[ETH]  ",
 	Bsc:  "[BSC]  ",
@@ -112,9 +112,9 @@ func NewStdLogger(enableColoring bool, level Level) *StdLogger {
 
 // formatMessage formats the log message with the appropriate log level, chain prefix, and coloring if enabled.
 func (l *StdLogger) formatMessage(level Level, chain Chain, format string) string {
-	prefix := prefixes[chain]
+	chainPrefix := chainPrefixes[chain]
 	if l.enableColoring {
-		prefix = color.New(colors[chain]).Sprint(prefix)
+		chainPrefix = color.New(colors[chain]).Sprint(chainPrefix)
 	}
 
 	var levelStr string
@@ -129,7 +129,7 @@ func (l *StdLogger) formatMessage(level Level, chain Chain, format string) strin
 		levelStr = "[ERROR]  "
 	}
 
-	return prefix + levelStr + format
+	return levelStr + chainPrefix + format
 }
 
 func (l *StdLogger) Info(format string, args ...interface{}) {
