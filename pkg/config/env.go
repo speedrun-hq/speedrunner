@@ -2,14 +2,15 @@ package config
 
 import (
 	"fmt"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/blockchain"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/logger"
 	"math/big"
 	"net/url"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/speedrun-hq/speedrun-fulfiller/pkg/blockchain"
+	"github.com/speedrun-hq/speedrun-fulfiller/pkg/logger"
 )
 
 const (
@@ -54,7 +55,7 @@ const (
 
 	// logging default options
 
-	DefaultLogLevel    = logger.InfoLevel
+	DefaultLogLevel    = logger.DebugLevel
 	DefaultLogColoring = true
 
 	// Network specific values
