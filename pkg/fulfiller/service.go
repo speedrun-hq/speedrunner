@@ -361,6 +361,13 @@ func (s *Service) hasSufficientBalance(intent models.Intent) bool {
 		return false
 	}
 
+	// convert amount for BSC unit difference
+	if intent.SourceChain == 56 {
+		amount = new(big.Int).Div(amount, big.NewInt(1000000000000))
+	} else if intent.DestinationChain == 56 {
+		amount = new(big.Int).Mul(amount, big.NewInt(1000000000000))
+	}
+
 	// Check if we have sufficient balance
 	amountFloat := new(big.Float).SetInt(amount)
 	return balance.Cmp(amountFloat) >= 0
