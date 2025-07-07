@@ -234,7 +234,7 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 		return fmt.Errorf("failed to fulfill intent on %d: %v", intent.DestinationChain, err)
 	}
 
-	s.logger.InfoWithChain(intent.DestinationChain, "Fulfillment transaction created for intent %s: %s")
+	s.logger.InfoWithChain(intent.DestinationChain, "Fulfillment transaction created for intent %s: %s", intent.ID, tx.Hash().Hex())
 
 	// Wait for the transaction to be mined
 	receipt, err := bind.WaitMined(context.Background(), chainConfig.Client, tx)
@@ -248,6 +248,6 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 		return fmt.Errorf("transaction failed on %d", intent.DestinationChain)
 	}
 
-	s.logger.NoticeWithChain(intent.DestinationChain, "Fulfillment transaction successful for intent %s: %s")
+	s.logger.NoticeWithChain(intent.DestinationChain, "Fulfillment transaction successful for intent %s: %s", intent.ID, tx.Hash().Hex())
 	return nil
 }
