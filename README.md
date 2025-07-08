@@ -13,6 +13,10 @@ The service is responsible for:
 - Executing cross-chain transactions to fulfill intents
 - Managing transaction fees and gas costs across different networks
 
+Currently, the service has hardcoded rules regarding what intents to fulfill.
+It does a simplified filtering based on intent amount, fee (depending on destination chain), and age.
+In the future, the operator will be able to configure these rules with a configuration file adapted for different risk profiles.
+
 ## Usage
 
 ### Prerequisites
