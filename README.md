@@ -1,5 +1,7 @@
 # Speedrunner
 
+![image](logo.png)
+
 Speedrunner is a simple service that fulfills cross-chain intents for the Speedrun protocol.
 This service monitors and processes pending intents across different blockchain networks.
 
