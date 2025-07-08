@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/config"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/logger"
 	"math/big"
 	"net/http"
 	"os"
@@ -16,10 +14,12 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/blockchain"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/circuitbreaker"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/contracts"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/metrics"
+	"github.com/speedrun-hq/speedrunner/pkg/blockchain"
+	"github.com/speedrun-hq/speedrunner/pkg/circuitbreaker"
+	"github.com/speedrun-hq/speedrunner/pkg/config"
+	"github.com/speedrun-hq/speedrunner/pkg/contracts"
+	"github.com/speedrun-hq/speedrunner/pkg/logger"
+	"github.com/speedrun-hq/speedrunner/pkg/metrics"
 )
 
 // Server represents a health check HTTP server

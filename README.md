@@ -1,23 +1,54 @@
-# Speedrun Fulfiller
+# Speedrunner
 
-A Go-based service that fulfills cross-chain intents for the Speedrun protocol. This service monitors and processes pending intents across different blockchain networks, ensuring efficient and reliable cross-chain transactions.
-
-## Features
-
-- Token approval optimization with unlimited approvals
-- Multi-chain support
-- Multi-token support per chain (USDC, USDT, and more)
-- Robust error handling and retry logic
+Speedrunner is a simple service that fulfills cross-chain intents for the Speedrun protocol.
+This service monitors and processes pending intents across different blockchain networks.
 
 ## Overview
 
-The Fulfiller service is responsible for:
-- Monitoring pending intents across multiple blockchain networks
+The service is responsible for:
+- Monitoring pending intents across supported blockchain networks
 - Validating and filtering viable intents based on configured criteria
 - Executing cross-chain transactions to fulfill intents
 - Managing transaction fees and gas costs across different networks
 
-## Package Structure
+## Usage
+
+### Prerequisites
+
+- Go 1.24 or higher
+- For the networks you want to support:
+  - Access to an RPC endpoint 
+  - Private key of a funded hot-wallet
+
+### Configuration
+
+The fulfiller process can be configured using environment variables.
+An example `.env.example` is provided in the repository. You can create a `.env` file based on this example.
+
+### Running
+
+Build the project:
+```bash
+go build -o speedrunner
+```
+
+Run the service:
+```bash
+./speedrunner
+```
+
+### Monitoring
+
+The service exposes Prometheus metrics on the configured metrics port (default: 8080):
+- `/metrics`: Prometheus metrics
+- `/health`: Health check endpoint
+- `/ready`: Readiness check endpoint
+- `/status`: Service status details
+- `/circuit/reset?chain=<chain_id>`: Reset circuit breaker for a specific chain (POST)
+
+## Contributing
+
+### Package Structure
 
 The codebase is organized into the following packages:
 
@@ -30,42 +61,7 @@ The codebase is organized into the following packages:
 - `pkg/metrics`: Prometheus metrics for monitoring
 - `pkg/models`: Data models shared across packages
 
-## Prerequisites
-
-- Go 1.24 or higher
-- For the networks you want to support:
-  - Access to an RPC endpoint 
-  - Private key of a funded hot-wallet
-
-## Configuration
-
-The fulfiller process can be configured using environment variables.
-An example `.env.example` is provided in the repository. You can create a `.env` file based on this example.
-
-## Building
-
-Build the project:
-```bash
-go build -o fulfiller
-```
-
-## Running
-
-Run the fulfiller service:
-```bash
-./fulfiller
-```
-
-## Monitoring
-
-The service exposes Prometheus metrics on the configured metrics port (default: 8080):
-- `/metrics`: Prometheus metrics
-- `/health`: Health check endpoint
-- `/ready`: Readiness check endpoint
-- `/status`: Service status details
-- `/circuit/reset?chain=<chain_id>`: Reset circuit breaker for a specific chain (POST)
-
-## Running Tests
+### Running Tests
 
 We provide multiple ways to run tests, with a focus on isolated tests that don't depend on external blockchain libraries.
 
@@ -80,7 +76,7 @@ make coverage
 make test
 ```
 
-### Testing Approach
+#### Testing Approach
 
 We've implemented two testing approaches:
 
@@ -90,7 +86,7 @@ We've implemented two testing approaches:
 
 Our CI pipeline runs the isolated tests to avoid dependency problems with `github.com/fjl/memsize` and other go-ethereum dependencies.
 
-## Dependency Issues
+### Dependency Issues
 
 If you encounter errors with the `github.com/fjl/memsize` dependency (e.g., `invalid reference to runtime.stopTheWorld`), you have two options:
 

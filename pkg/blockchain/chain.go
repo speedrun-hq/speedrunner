@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/contracts"
+	"github.com/speedrun-hq/speedrunner/pkg/contracts"
 )
 
 // ChainConfig holds the configuration for a specific chain

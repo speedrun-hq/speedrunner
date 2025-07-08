@@ -4,7 +4,7 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/fulfiller/mocks"
+	"github.com/speedrun-hq/speedrunner/pkg/fulfiller/mocks"
 	"github.com/stretchr/testify/assert"
 )
 

@@ -30,7 +30,7 @@ func TestMain(m *testing.M) {
 	setup()
 
 	// Run all tests and capture exit code
-	fmt.Printf("Running tests in package: github.com/speedrun-hq/speedrun-fulfiller/pkg/fulfiller\n")
+	fmt.Printf("Running tests in package: github.com/speedrun-hq/speedrunner/pkg/fulfiller\n")
 	exitCode := m.Run()
 
 	// Teardown phase - runs after all tests complete

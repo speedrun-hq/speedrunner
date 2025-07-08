@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/blockchain"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/logger"
+	"github.com/speedrun-hq/speedrunner/pkg/blockchain"
+	"github.com/speedrun-hq/speedrunner/pkg/logger"
 )
 
 const (

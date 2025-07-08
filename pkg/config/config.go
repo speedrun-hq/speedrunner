@@ -2,14 +2,14 @@ package config
 
 import (
 	"fmt"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/logger"
+	"github.com/speedrun-hq/speedrunner/pkg/logger"
 	"log"
 	"math/big"
 	"os"
 	"time"
 
 	"github.com/joho/godotenv"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/blockchain"
+	"github.com/speedrun-hq/speedrunner/pkg/blockchain"
 )
 
 // Config holds the configuration for the fulfiller service

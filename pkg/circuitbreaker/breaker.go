@@ -1,7 +1,7 @@
 package circuitbreaker
 
 import (
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/logger"
+	"github.com/speedrun-hq/speedrunner/pkg/logger"
 	"sync"
 	"time"
 )

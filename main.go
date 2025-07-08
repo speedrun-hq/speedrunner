@@ -7,8 +7,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/config"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/fulfiller"
+	"github.com/speedrun-hq/speedrunner/pkg/config"
+	"github.com/speedrun-hq/speedrunner/pkg/fulfiller"
 )
 
 func main() {

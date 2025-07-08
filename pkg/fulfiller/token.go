@@ -9,7 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/blockchain"
+	"github.com/speedrun-hq/speedrunner/pkg/blockchain"
 )
 
 // predefined approval amounts

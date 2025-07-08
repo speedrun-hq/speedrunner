@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/logger"
+	"github.com/speedrun-hq/speedrunner/pkg/logger"
 	"io"
 	"math/big"
 	"net/http"
@@ -13,12 +13,12 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/circuitbreaker"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/config"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/contracts"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/health"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/metrics"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/models"
+	"github.com/speedrun-hq/speedrunner/pkg/circuitbreaker"
+	"github.com/speedrun-hq/speedrunner/pkg/config"
+	"github.com/speedrun-hq/speedrunner/pkg/contracts"
+	"github.com/speedrun-hq/speedrunner/pkg/health"
+	"github.com/speedrun-hq/speedrunner/pkg/metrics"
+	"github.com/speedrun-hq/speedrunner/pkg/models"
 )
 
 // TokenType represents the type of token

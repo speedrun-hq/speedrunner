@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/metrics"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/models"
+	"github.com/speedrun-hq/speedrunner/pkg/metrics"
+	"github.com/speedrun-hq/speedrunner/pkg/models"
 )
 
 // worker processes intents from the job queue

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/models"
+	"github.com/speedrun-hq/speedrunner/pkg/models"
 	"github.com/stretchr/testify/assert"
 )
 

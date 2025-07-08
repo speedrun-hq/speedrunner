@@ -9,8 +9,8 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/metrics"
-	"github.com/speedrun-hq/speedrun-fulfiller/pkg/models"
+	"github.com/speedrun-hq/speedrunner/pkg/metrics"
+	"github.com/speedrun-hq/speedrunner/pkg/models"
 )
 
 // fulfillIntent attempts to fulfill a single intent
