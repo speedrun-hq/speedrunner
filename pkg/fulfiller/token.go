@@ -34,14 +34,9 @@ func (s *Service) OptimizedTokenApproval(
 ) (bool, error) {
 	// Get token from the token map
 	s.mu.Lock()
-	chainTokens, exists := s.tokens[chainID]
+	token, exists := s.tokenManager.GetToken(chainID, tokenType)
 	s.mu.Unlock()
 
-	if !exists {
-		return false, fmt.Errorf("tokens not configured for chain: %d", chainID)
-	}
-
-	token, exists := chainTokens[tokenType]
 	if !exists {
 		return false, fmt.Errorf("token type %s not configured for chain: %d", tokenType, chainID)
 	}

@@ -73,14 +73,9 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 
 	// Get token address from the map
 	s.mu.Lock()
-	chainTokens, exists := s.tokens[intent.DestinationChain]
+	token, exists := s.tokenManager.GetToken(intent.DestinationChain, tokenType)
 	s.mu.Unlock()
 
-	if !exists {
-		return fmt.Errorf("token mapping not configured for chain: %d", intent.DestinationChain)
-	}
-
-	token, exists := chainTokens[tokenType]
 	if !exists {
 		return fmt.Errorf("token type %s not configured for chain: %d", tokenType, intent.DestinationChain)
 	}

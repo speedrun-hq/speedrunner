@@ -2,20 +2,18 @@ package fulfiller
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"github.com/speedrun-hq/speedrunner/pkg/logger"
-	"io"
 	"math/big"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/speedrun-hq/speedrunner/pkg/logger"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/speedrun-hq/speedrunner/pkg/circuitbreaker"
 	"github.com/speedrun-hq/speedrunner/pkg/config"
-	"github.com/speedrun-hq/speedrunner/pkg/contracts"
 	"github.com/speedrun-hq/speedrunner/pkg/health"
 	"github.com/speedrun-hq/speedrunner/pkg/metrics"
 	"github.com/speedrun-hq/speedrunner/pkg/models"
@@ -52,13 +50,14 @@ type APIResponse struct {
 // Service handles the intent fulfillment process
 type Service struct {
 	config          *config.Config
-	httpClient      *http.Client
+	apiClient       *APIClient
+	intentFilter    *IntentFilter
+	tokenManager    *TokenManager
+	metricsManager  *MetricsManager
+	retryManager    *RetryManager
 	mu              sync.Mutex
-	tokens          map[int]map[TokenType]Token
-	tokenAddressMap map[common.Address]TokenType // Map for quick token type lookups
 	workers         int
 	pendingJobs     chan models.Intent
-	retryJobs       chan models.RetryJob
 	wg              sync.WaitGroup
 	circuitBreakers map[int]*circuitbreaker.CircuitBreaker
 	nonceManager    *NonceManager
@@ -103,14 +102,20 @@ func NewService(cfg *config.Config) (*Service, error) {
 	// Initialize new nonce manager
 	nonceManager := NewNonceManager()
 
+	// Initialize token manager
+	tokenManager := NewTokenManager(stdLogger)
+	// Set the tokens since the token manager doesn't have access to the config
+	tokenManager.SetTokens(tokens, tokenAddressMap)
+
 	return &Service{
 		config:          cfg,
-		httpClient:      createHTTPClient(),
-		tokens:          tokens,
-		tokenAddressMap: tokenAddressMap,
+		apiClient:       NewAPIClient(cfg.APIEndpoint, stdLogger),
+		intentFilter:    NewIntentFilter(cfg, tokenManager, stdLogger),
+		tokenManager:    tokenManager,
+		metricsManager:  NewMetricsManager(cfg, stdLogger),
+		retryManager:    NewRetryManager(stdLogger),
 		workers:         cfg.WorkerCount,
-		pendingJobs:     make(chan models.Intent, 100),   // Buffer for pending intents
-		retryJobs:       make(chan models.RetryJob, 100), // Buffer for retry jobs
+		pendingJobs:     make(chan models.Intent, 100), // Buffer for pending intents
 		circuitBreakers: circuitBreakers,
 		nonceManager:    nonceManager,
 		logger:          stdLogger,
@@ -149,7 +154,6 @@ func (s *Service) Start(ctx context.Context) {
 		case <-ctx.Done():
 			s.logger.Notice("Context cancelled, shutting down service")
 			close(s.pendingJobs)
-			close(s.retryJobs)
 			s.wg.Wait() // Wait for all workers to finish
 			return
 		case <-ticker.C:
@@ -177,230 +181,26 @@ func (s *Service) Start(ctx context.Context) {
 
 // fetchPendingIntents gets pending intents from the API
 func (s *Service) fetchPendingIntents() ([]models.Intent, error) {
-	resp, err := s.httpClient.Get(s.config.APIEndpoint + "/api/v1/intents?status=pending")
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch pending intents: %v", err)
-	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			s.logger.Error("Failed to close response body: %v", err)
-		}
-	}(resp.Body)
-
-	// Read the response body regardless of status code
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %v", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	// Try to unmarshal into our wrapper struct first
-	var apiResp APIResponse
-	if err := json.Unmarshal(bodyBytes, &apiResp); err != nil {
-		// If that fails, try directly as an array
-		var intents []models.Intent
-		if err := json.Unmarshal(bodyBytes, &intents); err != nil {
-			return nil, fmt.Errorf("failed to decode intents: %v, body: %s", err, string(bodyBytes))
-		}
-		return intents, nil
-	}
-
-	// Handle paginated response with no data
-	if apiResp.TotalCount == 0 {
-		s.logger.Debug("No pending intents found (page %d/%d, total count: %d)",
-			apiResp.Page, apiResp.TotalPages, apiResp.TotalCount)
-		return []models.Intent{}, nil
-	}
-
-	// Get intents from whatever field is populated
-	var intents []models.Intent
-	if len(apiResp.Intents) > 0 {
-		intents = apiResp.Intents
-	} else if len(apiResp.Data) > 0 {
-		intents = apiResp.Data
-	} else if len(apiResp.Results) > 0 {
-		intents = apiResp.Results
-	} else {
-		// Try one more thing - maybe it's in a top level array with a different name
-		// Parse as generic map and look for any array field
-		var genericResp map[string]interface{}
-		if err := json.Unmarshal(bodyBytes, &genericResp); err != nil {
-			return nil, fmt.Errorf("failed to decode response: %v", err)
-		}
-
-		for key, value := range genericResp {
-			if arrayValue, ok := value.([]interface{}); ok && len(arrayValue) > 0 {
-				// Found an array, try to convert it to intents
-				arrayJSON, err := json.Marshal(arrayValue)
-				if err != nil {
-					continue
-				}
-				if err := json.Unmarshal(arrayJSON, &intents); err == nil && len(intents) > 0 {
-					s.logger.Debug("Found intents in field: %s", key)
-					break
-				}
-			}
-		}
-
-		if len(intents) == 0 {
-			// This is a normal case when there are no pending intents
-			s.logger.Debug("No pending intents found in API response")
-			return []models.Intent{}, nil
-		}
-	}
-	return intents, nil
+	return s.apiClient.FetchPendingIntents()
 }
 
 // filterViableIntents filters intents that are viable for fulfillment
 func (s *Service) filterViableIntents(intents []models.Intent) []models.Intent {
-	var viableIntents []models.Intent
-	for _, intent := range intents {
-		// Check circuit breaker status
-		if breaker, exists := s.circuitBreakers[intent.DestinationChain]; exists {
-			if breaker.IsOpen() {
-				s.logger.Info("Skipping intent %s: Circuit breaker is open for chain %d",
-					intent.ID, intent.DestinationChain)
-				continue
-			}
-		}
-
-		// Check if source chain == destination chain
-		if intent.SourceChain == intent.DestinationChain {
-			s.logger.Debug("Skipping intent %s: Source and destination chains are the same: %d",
-				intent.ID, intent.SourceChain)
-			continue
-		}
-
-		// Check if intent is more than 2 minutes old, only process recent intent
-		// TODO: allow to configure this in config
-		intentAge := time.Since(intent.CreatedAt)
-		if intentAge > 2*time.Minute {
-			s.logger.Debug("Skipping intent %s: Intent is too old (age: %s)", intent.ID, intentAge.String())
-			continue
-		}
-
-		// Check token balance
-		if !s.hasSufficientBalance(intent) {
-			s.logger.Debug("Skipping intent %s: Insufficient token balance for chain %d",
-				intent.ID, intent.DestinationChain)
-			continue
-		}
-
-		fee, success := new(big.Int).SetString(intent.IntentFee, 10)
-		if !success {
-			s.logger.Debug("Skipping intent %s: Error parsing intent fee: invalid format", intent.ID)
-			continue
-		}
-		if fee.Cmp(big.NewInt(0)) <= 0 {
-			s.logger.Debug("Skipping intent %s: Fee is zero or negative", intent.ID)
-			continue
-		}
-
-		// Check if fee meets minimum requirement for the chain
-		s.mu.Lock()
-		destinationChainConfig, destinationExists := s.config.Chains[intent.DestinationChain]
-		s.mu.Unlock()
-
-		if !destinationExists {
-			s.logger.Debug("Skipping intent %s: Chain configuration not found for %d",
-				intent.ID, intent.DestinationChain)
-			continue
-		}
-
-		// convert fee for BSC unit difference
-		if intent.SourceChain == 56 {
-			fee = new(big.Int).Div(fee, big.NewInt(1000000000000))
-		} else if intent.DestinationChain == 56 {
-			fee = new(big.Int).Mul(fee, big.NewInt(1000000000000))
-		}
-
-		// Check if fee meets minimum requirement for the chain
-		if destinationChainConfig.MinFee != nil && fee.Cmp(destinationChainConfig.MinFee) < 0 {
-			s.logger.Debug("Skipping intent %s: Fee %s below minimum %s for chain %d",
-				intent.ID, fee.String(), destinationChainConfig.MinFee.String(), intent.DestinationChain)
-			continue
-		}
-
-		viableIntents = append(viableIntents, intent)
-	}
-	return viableIntents
+	return s.intentFilter.FilterViableIntents(intents, s.circuitBreakers)
 }
 
-// hasSufficientBalance checks if we have sufficient token balance for the intent
-func (s *Service) hasSufficientBalance(intent models.Intent) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Get token address from the intent
-	tokenAddress := common.HexToAddress(intent.Token)
-
-	// Get token type from address
-	tokenType := s.getTokenTypeFromAddress(tokenAddress)
-	if tokenType == "" {
-		s.logger.DebugWithChain(intent.DestinationChain, "Unknown token type for address %s", tokenAddress.Hex())
-		return false
+// retryHandler processes retry jobs
+func (s *Service) retryHandler(ctx context.Context) {
+	s.logger.Info("Retry handler started")
+	for {
+		select {
+		case <-ctx.Done():
+			s.logger.Info("Retry handler shutting down")
+			return
+		case <-time.After(1 * time.Second):
+			s.retryManager.processRetryJobs()
+		}
 	}
-
-	// Get token for the destination chain
-	token, exists := s.tokens[intent.DestinationChain][tokenType]
-	if !exists {
-		s.logger.DebugWithChain(intent.DestinationChain, "Token %s not configured", tokenType)
-		return false
-	}
-
-	// Get token balance
-	balance, err := s.getTokenBalance(intent.DestinationChain, token.Address)
-	if err != nil {
-		s.logger.DebugWithChain(intent.DestinationChain, "Error getting token balance: %v", err)
-		return false
-	}
-
-	// Convert intent amount to big.Int
-	amount, success := new(big.Int).SetString(intent.Amount, 10)
-	if !success {
-		s.logger.DebugWithChain(intent.DestinationChain, "Error parsing intent amount: %s", intent.Amount)
-		return false
-	}
-
-	// convert amount for BSC unit difference
-	if intent.SourceChain == 56 {
-		amount = new(big.Int).Div(amount, big.NewInt(1000000000000))
-	} else if intent.DestinationChain == 56 {
-		amount = new(big.Int).Mul(amount, big.NewInt(1000000000000))
-	}
-
-	// Check if we have sufficient balance
-	amountFloat := new(big.Float).SetInt(amount)
-	return balance.Cmp(amountFloat) >= 0
-}
-
-// getTokenBalance gets the token balance for a given chain and token address
-func (s *Service) getTokenBalance(chainID int, tokenAddress common.Address) (*big.Float, error) {
-	chainConfig, exists := s.config.Chains[chainID]
-	if !exists {
-		return nil, fmt.Errorf("chain configuration not found for chain %d", chainID)
-	}
-
-	// Create ERC20 contract instance
-	token, err := contracts.NewERC20(tokenAddress, chainConfig.Client)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create ERC20 contract: %v", err)
-	}
-
-	// Get raw balance
-	rawBalance, err := token.BalanceOf(nil, common.HexToAddress(s.config.FulfillerAddress))
-	if err != nil {
-		return nil, fmt.Errorf("failed to get token balance: %v", err)
-	}
-
-	// Normalize balance by dividing by 10^decimals
-	balanceFloat := new(big.Float).SetInt(rawBalance)
-
-	return balanceFloat, nil
 }
 
 // Helper function to create an HTTP client with timeouts
@@ -469,185 +269,54 @@ func initializeTokens(tokens map[int]map[TokenType]Token, tokenAddressMap map[co
 	}
 }
 
-// retryHandler handles retrying failed jobs with exponential backoff
-func (s *Service) retryHandler(ctx context.Context) {
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			s.processRetryJobs()
-		}
-	}
-}
-
-// processRetryJobs processes jobs in the retry queue
-func (s *Service) processRetryJobs() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	now := time.Now()
-	for {
-		select {
-		case job := <-s.retryJobs:
-			if now.Before(job.NextAttempt) {
-				// Put the job back in the queue
-				s.retryJobs <- job
-				// Update next retry metric
-				metrics.NextRetryIn.Set(time.Until(job.NextAttempt).Seconds())
-				return
-			}
-
-			// Check if we've exceeded max retries
-			if job.RetryCount >= s.config.MaxRetries {
-				s.logger.Debug("Max retries exceeded for intent %s: %s", job.Intent.ID, job.ErrorType)
-				metrics.MaxRetriesReached.WithLabelValues(
-					fmt.Sprintf("%d", job.Intent.DestinationChain),
-					job.ErrorType,
-				).Inc()
-				continue
-			}
-
-			// Check circuit breaker
-			if breaker, exists := s.circuitBreakers[job.Intent.DestinationChain]; exists && breaker.IsOpen() {
-				// Put the job back in the queue
-				s.retryJobs <- job
-				metrics.RetriesSkipped.WithLabelValues(
-					fmt.Sprintf("%d", job.Intent.DestinationChain),
-					"circuit_breaker_open",
-				).Inc()
-				return
-			}
-
-			// Check gas price
-			if !s.isGasPriceAcceptable(job.Intent.DestinationChain) {
-				// Put the job back in the queue
-				s.retryJobs <- job
-				metrics.RetriesSkipped.WithLabelValues(
-					fmt.Sprintf("%d", job.Intent.DestinationChain),
-					"gas_price_too_high",
-				).Inc()
-				return
-			}
-
-			// Process the job
-			s.wg.Add(1)
-			s.pendingJobs <- job.Intent
-			metrics.RetriesExecuted.WithLabelValues(
-				fmt.Sprintf("%d", job.Intent.DestinationChain),
-				job.ErrorType,
-			).Inc()
-		default:
-			return
-		}
-	}
-}
-
-// isGasPriceAcceptable checks if the current gas price is acceptable for the chain
-func (s *Service) isGasPriceAcceptable(chainID int) bool {
-	chainConfig, exists := s.config.Chains[chainID]
-	if !exists {
-		return false
-	}
-
-	// Get current gas price
-	gasPrice, err := chainConfig.Client.SuggestGasPrice(context.Background())
-	if err != nil {
-
-		s.logger.ErrorWithChain(chainID, "Error getting gas price: %v", err)
-		return false
-	}
-
-	// Check if gas price is within acceptable range
-	if chainConfig.MaxGasPrice != nil && gasPrice.Cmp(chainConfig.MaxGasPrice) > 0 {
-		s.logger.ErrorWithChain(chainID, "Gas price too high: %s > %s", gasPrice.String(), chainConfig.MaxGasPrice.String())
-		return false
-	}
-
-	return true
-}
-
-// getTokenTypeFromAddress determines the token type based on the token address
-func (s *Service) getTokenTypeFromAddress(address common.Address) TokenType {
-	return s.tokenAddressMap[address]
-}
-
-// updateMetrics updates Prometheus metrics
+// updateMetrics updates all metrics
 func (s *Service) updateMetrics() {
-	s.logger.Debug("Starting metrics update...")
+	s.logger.Debug("Updating metrics...")
+
+	// Update gas prices for each chain
+	for chainID, chainConfig := range s.config.Chains {
+		gasPrice, err := chainConfig.UpdateGasPrice(context.Background())
+		if err != nil {
+			s.logger.DebugWithChain(chainID, "Failed to update gas price: %v", err)
+			continue
+		}
+
+		// Convert to gwei for readability
+		gasPriceGwei := new(big.Float).Quo(
+			new(big.Float).SetInt(gasPrice),
+			big.NewFloat(1e9), // 1 gwei = 10^9 wei
+		)
+		gweiFlt, _ := gasPriceGwei.Float64()
+		metrics.GasPrice.WithLabelValues(strconv.Itoa(chainID)).Set(gweiFlt)
+
+		s.logger.DebugWithChain(chainID, "Updated gas price: %.2f gwei", gweiFlt)
+	}
 
 	// Update token balance metrics
-	for chainID, chainTokens := range s.tokens {
+	for chainID, chainTokens := range s.tokenManager.GetAllTokens() {
 		chainName := config.GetChainName(chainID)
 		s.logger.DebugWithChain(chainID, "Processing token balances")
 
 		for tokenType, token := range chainTokens {
 
-			balance, err := s.getTokenBalance(chainID, token.Address)
+			balance, err := s.intentFilter.getTokenBalance(chainID, token.Address)
 			if err != nil {
 				s.logger.DebugWithChain(chainID, "Error getting token balance for %s: %v", tokenType, err)
 				continue
 			}
 
-			// Get token decimals for logging
-			token, err := contracts.NewERC20(token.Address, s.config.Chains[chainID].Client)
-			if err != nil {
-				s.logger.DebugWithChain(chainID, "Error creating token contract for %s: %v", tokenType, err)
-				continue
-			}
-			decimals, err := token.Decimals(&bind.CallOpts{})
-			if err != nil {
-				s.logger.DebugWithChain(chainID, "Error getting decimals for %s: %v", tokenType, err)
-				continue
-			}
+			// Convert balance to float64 for metrics
+			balanceFloat, _ := balance.Float64()
+			metrics.TokenBalance.WithLabelValues(chainName, string(tokenType)).Set(balanceFloat)
 
-			// Convert balance to float64 for Prometheus
-			decimalsFloat := new(big.Float).SetInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals)), nil))
-			balance.Quo(balance, decimalsFloat)
-			balanceFloat64, _ := balance.Float64()
-
-			metrics.TokenBalance.WithLabelValues(
-				chainName,
-				string(tokenType),
-			).Set(balanceFloat64)
+			s.logger.DebugWithChain(chainID, "Token %s balance: %f", tokenType, balanceFloat)
 		}
-	}
-
-	// Update gas price metrics
-	for chainID, chainConfig := range s.config.Chains {
-		chainName := config.GetChainName(chainID)
-		if chainName == "" {
-			chainName = "Unknown"
-		}
-
-		gasPrice, err := chainConfig.Client.SuggestGasPrice(context.Background())
-		if err != nil {
-			s.logger.DebugWithChain(chainID, "Error getting gas price: %v", err)
-			continue
-		}
-
-		// Convert gas price to gwei for Prometheus
-		gasPriceGwei := new(big.Float).Quo(
-			new(big.Float).SetInt(gasPrice),
-			new(big.Float).SetInt(big.NewInt(1e9)),
-		)
-		gasPriceFloat64, _ := gasPriceGwei.Float64()
-
-		s.logger.DebugWithChain(chainID, "Setting gas price metric: %f gwei", gasPriceFloat64)
-		metrics.GasPrice.WithLabelValues(
-			chainName,
-		).Set(gasPriceFloat64)
 	}
 
 	// Update retry queue size
-	queueSize := len(s.retryJobs)
+	queueSize := len(s.retryManager.GetRetryJobsChannel())
 	s.logger.Debug("Setting retry queue size metric: %d", queueSize)
 	metrics.RetryQueueSize.Set(float64(queueSize))
-
-	s.logger.Debug("Metrics update completed")
 }
 
 // startMetricsUpdater starts a goroutine to update metrics periodically
