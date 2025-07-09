@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/speedrun-hq/speedrunner/pkg/contracts"
 	"github.com/speedrun-hq/speedrunner/pkg/metrics"
 	"github.com/speedrun-hq/speedrunner/pkg/models"
 )
@@ -95,55 +96,7 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 		intent.ID, tokenAddress.Hex(), intentAddress.Hex(),
 	)
 
-	// TODO: move to contracts package
-	erc20ABI, err := abi.JSON(strings.NewReader(`[
-		{
-			"constant": true,
-			"inputs": [
-				{
-					"name": "_owner",
-					"type": "address"
-				},
-				{
-					"name": "_spender",
-					"type": "address"
-				}
-			],
-			"name": "allowance",
-			"outputs": [
-				{
-					"name": "",
-					"type": "uint256"
-				}
-			],
-			"payable": false,
-			"stateMutability": "view",
-			"type": "function"
-		},
-		{
-			"constant": false,
-			"inputs": [
-				{
-					"name": "_spender",
-					"type": "address"
-				},
-				{
-					"name": "_value",
-					"type": "uint256"
-				}
-			],
-			"name": "approve",
-			"outputs": [
-				{
-					"name": "",
-					"type": "bool"
-				}
-			],
-			"payable": false,
-			"stateMutability": "nonpayable",
-			"type": "function"
-		}
-	]`))
+	erc20ABI, err := abi.JSON(strings.NewReader(contracts.ERC20ABI))
 	if err != nil {
 		return fmt.Errorf("failed to parse ERC20 ABI: %v", err)
 	}

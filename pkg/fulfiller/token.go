@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/speedrun-hq/speedrunner/pkg/blockchain"
+	"github.com/speedrun-hq/speedrunner/pkg/contracts"
 )
 
 // predefined approval amounts
@@ -17,60 +18,9 @@ var (
 	ZeroApproval = big.NewInt(0)
 	// MaxUint256 represents the maximum possible uint256 value (2^256 - 1)
 	MaxUint256 = new(big.Int).Sub(new(big.Int).Exp(big.NewInt(2), big.NewInt(256), nil), big.NewInt(1))
-	// threshold for deciding when to use infinite approval (if transaction amount > 30% of current allowance)
+	// ApprovalThreshold for deciding when to use infinite approval (if transaction amount > 30% of current allowance)
 	ApprovalThreshold = big.NewFloat(0.3)
 )
-
-// ERC20ABI contains the ABI for ERC20 token functions needed for approvals
-// TODO: move to contracts
-const ERC20ABI = `[
-	{
-		"constant": true,
-		"inputs": [
-			{
-				"name": "_owner",
-				"type": "address"
-			},
-			{
-				"name": "_spender",
-				"type": "address"
-			}
-		],
-		"name": "allowance",
-		"outputs": [
-			{
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"payable": false,
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"constant": false,
-		"inputs": [
-			{
-				"name": "_spender",
-				"type": "address"
-			},
-			{
-				"name": "_value",
-				"type": "uint256"
-			}
-		],
-		"name": "approve",
-		"outputs": [
-			{
-				"name": "",
-				"type": "bool"
-			}
-		],
-		"payable": false,
-		"stateMutability": "nonpayable",
-		"type": "function"
-	}
-]`
 
 // OptimizedTokenApproval handles token approvals with gas optimization strategy
 // It returns true if a new approval was needed and executed successfully, false if no approval was needed
@@ -100,7 +50,7 @@ func (s *Service) OptimizedTokenApproval(
 	s.logger.InfoWithChain(chainID, "Processing token approval for %s (%s) at address %s", token.Symbol, tokenType, tokenAddress.Hex())
 
 	// Create ERC20 contract binding
-	erc20ABI, err := abi.JSON(strings.NewReader(ERC20ABI))
+	erc20ABI, err := abi.JSON(strings.NewReader(contracts.ERC20ABI))
 	if err != nil {
 		return false, fmt.Errorf("failed to parse ERC20 ABI: %v", err)
 	}
