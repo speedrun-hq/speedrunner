@@ -158,10 +158,10 @@ func (s *Server) Start() {
 	// Readiness check
 	http.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
 		// Check if all chain clients are connected
-		for chainID, config := range s.chains {
-			if config.Client == nil {
+		for chainID, chainConfig := range s.chains {
+			if chainConfig.Client == nil {
 				w.WriteHeader(http.StatusServiceUnavailable)
-				_, _ = w.Write([]byte(fmt.Sprintf("Chain %d client not connected", chainID)))
+				_, _ = fmt.Fprintf(w, "Chain %d client not connected", chainID)
 				return
 			}
 		}
@@ -173,8 +173,8 @@ func (s *Server) Start() {
 	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		status := make(map[string]interface{})
 
-		for chainID, config := range s.chains {
-			status[fmt.Sprintf("chain_%d", chainID)] = s.getChainStatus(r.Context(), chainID, config)
+		for chainID, chainConfig := range s.chains {
+			status[fmt.Sprintf("chain_%d", chainID)] = s.getChainStatus(r.Context(), chainID, chainConfig)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -210,13 +210,13 @@ func (s *Server) Start() {
 		cb, ok := s.circuitBreakers[chainID]
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte(fmt.Sprintf("No circuit breaker for chain %d", chainID)))
+			_, _ = fmt.Fprintf(w, "No circuit breaker for chain %d", chainID)
 			return
 		}
 
 		cb.Reset()
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(fmt.Sprintf("Circuit breaker for chain %d reset", chainID)))
+		_, _ = fmt.Fprintf(w, "Circuit breaker for chain %d reset", chainID)
 	})
 
 	// Expose Prometheus metrics with API key authentication
