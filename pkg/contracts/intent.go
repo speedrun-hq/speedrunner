@@ -142,33 +142,6 @@ func NewIntent(address common.Address, backend bind.ContractBackend) (*Intent, e
 	return &Intent{IntentCaller: IntentCaller{contract: contract}, IntentTransactor: IntentTransactor{contract: contract}, IntentFilterer: IntentFilterer{contract: contract}}, nil
 }
 
-// NewIntentCaller creates a new read-only instance of Intent, bound to a specific deployed contract.
-func NewIntentCaller(address common.Address, caller bind.ContractCaller) (*IntentCaller, error) {
-	contract, err := bindIntent(address, caller, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	return &IntentCaller{contract: contract}, nil
-}
-
-// NewIntentTransactor creates a new write-only instance of Intent, bound to a specific deployed contract.
-func NewIntentTransactor(address common.Address, transactor bind.ContractTransactor) (*IntentTransactor, error) {
-	contract, err := bindIntent(address, nil, transactor, nil)
-	if err != nil {
-		return nil, err
-	}
-	return &IntentTransactor{contract: contract}, nil
-}
-
-// NewIntentFilterer creates a new log filterer instance of Intent, bound to a specific deployed contract.
-func NewIntentFilterer(address common.Address, filterer bind.ContractFilterer) (*IntentFilterer, error) {
-	contract, err := bindIntent(address, nil, nil, filterer)
-	if err != nil {
-		return nil, err
-	}
-	return &IntentFilterer{contract: contract}, nil
-}
-
 // bindIntent binds a generic wrapper to an already deployed contract.
 func bindIntent(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
 	parsed, err := abi.JSON(strings.NewReader(IntentABI))

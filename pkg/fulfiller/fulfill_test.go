@@ -59,7 +59,12 @@ func TestFulfillIntentApprovalLogic(t *testing.T) {
 
 	// Setup simulated blockchain
 	sim, auth := setupTestSimulation(t)
-	defer sim.Close()
+	defer func(sim *simulated.Backend) {
+		err := sim.Close()
+		if err != nil {
+			t.Fatalf("Failed to close simulated backend: %v", err)
+		}
+	}(sim)
 
 	// Create test service
 	service := &TestService{

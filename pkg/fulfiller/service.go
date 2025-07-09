@@ -67,7 +67,7 @@ type Service struct {
 
 // NewService creates a new fulfiller service
 func NewService(cfg *config.Config) (*Service, error) {
-	logger := logger.NewStdLogger(cfg.LoggerConfig.Coloring, cfg.LoggerConfig.Level)
+	stdLogger := logger.NewStdLogger(cfg.LoggerConfig.Coloring, cfg.LoggerConfig.Level)
 
 	// Connect to blockchain clients
 	for _, chainConfig := range cfg.Chains {
@@ -96,7 +96,7 @@ func NewService(cfg *config.Config) (*Service, error) {
 			cfg.CircuitBreaker.Threshold,
 			cfg.CircuitBreaker.WindowDuration,
 			cfg.CircuitBreaker.ResetTimeout,
-			logger,
+			stdLogger,
 		)
 	}
 
@@ -113,7 +113,7 @@ func NewService(cfg *config.Config) (*Service, error) {
 		retryJobs:       make(chan models.RetryJob, 100), // Buffer for retry jobs
 		circuitBreakers: circuitBreakers,
 		nonceManager:    nonceManager,
-		logger:          logger,
+		logger:          stdLogger,
 	}, nil
 }
 
@@ -181,7 +181,12 @@ func (s *Service) fetchPendingIntents() ([]models.Intent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch pending intents: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			s.logger.Error("Failed to close response body: %v", err)
+		}
+	}(resp.Body)
 
 	// Read the response body regardless of status code
 	bodyBytes, err := io.ReadAll(resp.Body)

@@ -207,9 +207,10 @@ func GetEnvCircuitBreakerEnabled() (bool, error) {
 		return DefaultCircuitBreakerEnabled, nil
 	}
 
-	if enabled == "true" {
+	switch enabled {
+	case "true":
 		return true, nil
-	} else if enabled == "false" {
+	case "false":
 		return false, nil
 	}
 
@@ -340,9 +341,10 @@ func GetEnvLogColoring() (bool, error) {
 		return DefaultLogColoring, nil
 	}
 
-	if logColoring == "true" {
+	switch logColoring {
+	case "true":
 		return true, nil
-	} else if logColoring == "false" {
+	case "false":
 		return false, nil
 	}
 
