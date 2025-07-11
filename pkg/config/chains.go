@@ -1,5 +1,7 @@
 package config
 
+import "strings"
+
 // chainNames maps chain IDs to their names
 var chainNames = map[int]string{
 	1:     "ETHEREUM",
@@ -58,4 +60,26 @@ func GetUSDTAddress(chainID int) string {
 		return ""
 	}
 	return address
+}
+
+// GetTokenType returns from the address the name of the token (USDC or USDT)
+// It walk through all addresses maps, compare with address converted to lowercase and returns the token type if found
+// return an empty string if not found
+func GetTokenType(address string) string {
+	// convert address to lowercase for case-insensitive comparison
+	address = strings.ToLower(address)
+
+	for _, usdcAddress := range usdcAddresses {
+		if strings.ToLower(usdcAddress) == address {
+			return "USDC"
+		}
+	}
+
+	for _, usdtAddress := range usdtAddresses {
+		if strings.ToLower(usdtAddress) == address {
+			return "USDT"
+		}
+	}
+
+	return ""
 }

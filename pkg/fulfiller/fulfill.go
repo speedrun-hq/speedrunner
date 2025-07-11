@@ -3,6 +3,7 @@ package fulfiller
 import (
 	"context"
 	"fmt"
+	"github.com/speedrun-hq/speedrunner/pkg/config"
 	"math/big"
 	"strings"
 
@@ -65,11 +66,10 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 	intentAddress := common.HexToAddress(chainConfig.IntentAddress)
 
 	// Get the token type from token address
-
-	if intent.TokenType == "" {
+	tokenType := TokenType(config.GetTokenType(intent.Token))
+	if tokenType == "" {
 		return fmt.Errorf("token type not specified in intent: %s", intent.ID)
 	}
-	tokenType := TokenType(strings.ToUpper(intent.TokenType))
 
 	// Get token address from the map
 	s.mu.Lock()
