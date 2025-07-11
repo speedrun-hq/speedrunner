@@ -66,10 +66,10 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 
 	// Get the token type from token address
 
-	tokenType := TokenTypeUSDC
-	if intent.TokenType != "" {
-		tokenType = TokenType(strings.ToUpper(intent.TokenType))
+	if intent.TokenType == "" {
+		return fmt.Errorf("token type not specified in intent: %s", intent.ID)
 	}
+	tokenType := TokenType(strings.ToUpper(intent.TokenType))
 
 	// Get token address from the map
 	s.mu.Lock()
