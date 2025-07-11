@@ -18,15 +18,15 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	// Create the fulfiller service
-	service, err := fulfiller.NewService(cfg)
-	if err != nil {
-		log.Fatalf("Failed to create fulfiller service: %v", err)
-	}
-
 	// Set up context with cancellation on SIGINT/SIGTERM
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Create the fulfiller service
+	service, err := fulfiller.NewService(ctx, cfg)
+	if err != nil {
+		log.Fatalf("Failed to create fulfiller service: %v", err)
+	}
 
 	// Set up signal handling for graceful shutdown
 	signalCh := make(chan os.Signal, 1)

@@ -16,7 +16,7 @@ import (
 )
 
 // fulfillIntent attempts to fulfill a single intent
-func (s *Service) fulfillIntent(intent models.Intent) error {
+func (s *Service) fulfillIntent(ctx context.Context, intent models.Intent) error {
 	s.mu.Lock()
 	chainConfig, exists := s.config.Chains[intent.DestinationChain]
 	s.mu.Unlock()
@@ -26,7 +26,7 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 	}
 
 	// Update gas price before transaction
-	finalGasPrice, err := chainConfig.UpdateGasPrice(context.Background())
+	finalGasPrice, err := chainConfig.UpdateGasPrice(ctx)
 	if err != nil {
 		s.logger.DebugWithChain(intent.DestinationChain, "Failed to update gas price: %s", err.Error())
 		// Continue with default/previous gas price
@@ -105,7 +105,7 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 	needsApproval := true
 
 	// Check current allowance first
-	callOpts := &bind.CallOpts{Context: context.Background()}
+	callOpts := &bind.CallOpts{Context: ctx}
 
 	// Use method call to get allowance
 	var out []interface{}
@@ -148,7 +148,7 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 		s.logger.InfoWithChain(intent.DestinationChain, "Approval transaction sent for intent %s: %s", intent.ID, approveTx.Hash().Hex())
 
 		// Wait for the approve transaction to be mined
-		approveReceipt, err := bind.WaitMined(context.Background(), chainConfig.Client, approveTx)
+		approveReceipt, err := bind.WaitMined(ctx, chainConfig.Client, approveTx)
 		if err != nil {
 			s.logger.ErrorWithChain(intent.DestinationChain, "Failed to mine approval transaction for intent %s: %v", intent.ID, err)
 			return fmt.Errorf("failed to wait for approve transaction: %v", err)
@@ -176,7 +176,7 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 	s.logger.InfoWithChain(intent.DestinationChain, "Fulfillment transaction created for intent %s: %s", intent.ID, tx.Hash().Hex())
 
 	// Wait for the transaction to be mined
-	receipt, err := bind.WaitMined(context.Background(), chainConfig.Client, tx)
+	receipt, err := bind.WaitMined(ctx, chainConfig.Client, tx)
 	if err != nil {
 		s.logger.ErrorWithChain(intent.DestinationChain, "Failed to wait for transaction on intent %s: %v", intent.ID, err)
 		return fmt.Errorf("failed to wait for transaction on %d: %v", intent.DestinationChain, err)

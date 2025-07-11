@@ -29,12 +29,12 @@ type Service struct {
 }
 
 // NewService creates a new fulfiller service
-func NewService(cfg *config.Config) (*Service, error) {
+func NewService(ctx context.Context, cfg *config.Config) (*Service, error) {
 	stdLogger := logger.NewStdLogger(cfg.LoggerConfig.Coloring, cfg.LoggerConfig.Level)
 
 	// Connect to blockchain clients
 	for _, chainConfig := range cfg.Chains {
-		if err := chainConfig.Connect(cfg.PrivateKey); err != nil {
+		if err := chainConfig.Connect(ctx, cfg.PrivateKey); err != nil {
 			return nil, fmt.Errorf("failed to connect to chain %d: %v", chainConfig.ChainID, err)
 		}
 	}
@@ -130,13 +130,13 @@ func (s *Service) retryHandler(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.processRetryJobs()
+			s.processRetryJobs(ctx)
 		}
 	}
 }
 
 // processRetryJobs processes jobs in the retry queue
-func (s *Service) processRetryJobs() {
+func (s *Service) processRetryJobs(ctx context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -174,7 +174,7 @@ func (s *Service) processRetryJobs() {
 			}
 
 			// Check gas price
-			if !s.isGasPriceAcceptable(job.Intent.DestinationChain) {
+			if !s.isGasPriceAcceptable(ctx, job.Intent.DestinationChain) {
 				// Put the job back in the queue
 				s.retryJobs <- job
 				metrics.RetriesSkipped.WithLabelValues(
@@ -198,14 +198,14 @@ func (s *Service) processRetryJobs() {
 }
 
 // isGasPriceAcceptable checks if the current gas price is acceptable for the chain
-func (s *Service) isGasPriceAcceptable(chainID int) bool {
+func (s *Service) isGasPriceAcceptable(ctx context.Context, chainID int) bool {
 	chainConfig, exists := s.config.Chains[chainID]
 	if !exists {
 		return false
 	}
 
 	// Get current gas price
-	gasPrice, err := chainConfig.Client.SuggestGasPrice(context.Background())
+	gasPrice, err := chainConfig.Client.SuggestGasPrice(ctx)
 	if err != nil {
 
 		s.logger.ErrorWithChain(chainID, "Error getting gas price: %v", err)

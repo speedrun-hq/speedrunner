@@ -22,13 +22,13 @@ func (s *Service) startMetricsUpdater(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.updateMetrics()
+			s.updateMetrics(ctx)
 		}
 	}
 }
 
 // updateMetrics updates Prometheus metrics
-func (s *Service) updateMetrics() {
+func (s *Service) updateMetrics(ctx context.Context) {
 	s.logger.Debug("Starting metrics update...")
 
 	// Update token balance metrics
@@ -81,7 +81,7 @@ func (s *Service) updateMetrics() {
 			chainName = "Unknown"
 		}
 
-		gasPrice, err := chainConfig.Client.SuggestGasPrice(context.Background())
+		gasPrice, err := chainConfig.Client.SuggestGasPrice(ctx)
 		if err != nil {
 			s.logger.DebugWithChain(chainID, "Error getting gas price: %v", err)
 			continue

@@ -61,7 +61,7 @@ func New(chainID int, rpcURL string, intentAddress string, minFee string) *Clien
 }
 
 // Connect establishes connections to blockchain RPC and initializes contract instances
-func (c *Client) Connect(privateKey string) error {
+func (c *Client) Connect(ctx context.Context, privateKey string) error {
 	// Connect to Ethereum client
 	client, err := ethclient.Dial(c.RPCURL)
 	if err != nil {
@@ -71,7 +71,7 @@ func (c *Client) Connect(privateKey string) error {
 
 	// Set up authenticator and contract binding
 	if privateKey != "" {
-		auth, err := createAuthenticator(client, privateKey)
+		auth, err := createAuthenticator(ctx, client, privateKey)
 		if err != nil {
 			return fmt.Errorf("failed to create authenticator: %v", err)
 		}
@@ -131,7 +131,7 @@ func (c *Client) GetLatestBlockNumber(ctx context.Context) (uint64, error) {
 }
 
 // Helper function to create authenticator
-func createAuthenticator(client *ethclient.Client, privateKeyHex string) (*bind.TransactOpts, error) {
+func createAuthenticator(ctx context.Context, client *ethclient.Client, privateKeyHex string) (*bind.TransactOpts, error) {
 	// Parse private key
 	privateKey, err := crypto.HexToECDSA(privateKeyHex)
 	if err != nil {
@@ -139,7 +139,7 @@ func createAuthenticator(client *ethclient.Client, privateKeyHex string) (*bind.
 	}
 
 	// Get chain ID
-	chainID, err := client.ChainID(context.Background())
+	chainID, err := client.ChainID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get chain ID: %v", err)
 	}
