@@ -61,7 +61,6 @@ type Service struct {
 	retryJobs       chan models.RetryJob
 	wg              sync.WaitGroup
 	circuitBreakers map[int]*circuitbreaker.CircuitBreaker
-	nonceManager    *NonceManager
 	logger          logger.Logger
 }
 
@@ -100,9 +99,6 @@ func NewService(cfg *config.Config) (*Service, error) {
 		)
 	}
 
-	// Initialize new nonce manager
-	nonceManager := NewNonceManager()
-
 	return &Service{
 		config:          cfg,
 		httpClient:      createHTTPClient(),
@@ -112,7 +108,6 @@ func NewService(cfg *config.Config) (*Service, error) {
 		pendingJobs:     make(chan models.Intent, 100),   // Buffer for pending intents
 		retryJobs:       make(chan models.RetryJob, 100), // Buffer for retry jobs
 		circuitBreakers: circuitBreakers,
-		nonceManager:    nonceManager,
 		logger:          stdLogger,
 	}, nil
 }
