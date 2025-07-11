@@ -15,8 +15,8 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/speedrun-hq/speedrunner/pkg/blockchain"
+	"github.com/speedrun-hq/speedrunner/pkg/chains"
 	"github.com/speedrun-hq/speedrunner/pkg/circuitbreaker"
-	"github.com/speedrun-hq/speedrunner/pkg/config"
 	"github.com/speedrun-hq/speedrunner/pkg/contracts"
 	"github.com/speedrun-hq/speedrunner/pkg/logger"
 	"github.com/speedrun-hq/speedrunner/pkg/metrics"
@@ -165,14 +165,14 @@ func (s *Server) metricsAuthMiddleware(next http.Handler) http.Handler {
 func (s *Server) getTokenBalances(ctx context.Context, chainID int, chainConfig *blockchain.ChainConfig) map[string]interface{} {
 	tokenBalances := make(map[string]interface{})
 
-	chainName := config.GetChainName(chainID)
+	chainName := chains.GetChainName(chainID)
 	if chainName == "" {
 		s.logger.Info("Warning: Unknown chain ID %d", chainID)
 		return tokenBalances
 	}
 
 	// Get USDC balance
-	if usdcAddr := config.GetUSDCAddress(chainID); usdcAddr != "" {
+	if usdcAddr := chains.GetTokenAddress(chainID, chains.TokenTypeUSDC); usdcAddr != "" {
 		if balance, err := s.getTokenBalance(ctx, chainConfig.Client, common.HexToAddress(usdcAddr), chainConfig.Auth.From); err == nil {
 			tokenBalances["USDC"] = balance.String()
 		} else {
@@ -183,7 +183,7 @@ func (s *Server) getTokenBalances(ctx context.Context, chainID int, chainConfig 
 	}
 
 	// Get USDT balance
-	if usdtAddr := config.GetUSDTAddress(chainID); usdtAddr != "" {
+	if usdtAddr := chains.GetTokenAddress(chainID, chains.TokenTypeUSDT); usdtAddr != "" {
 		if balance, err := s.getTokenBalance(ctx, chainConfig.Client, common.HexToAddress(usdtAddr), chainConfig.Auth.From); err == nil {
 			tokenBalances["USDT"] = balance.String()
 		} else {
@@ -275,7 +275,7 @@ func (s *Server) getTokenBalance(ctx context.Context, client *ethclient.Client, 
 
 	// Update Prometheus metric
 	metrics.TokenBalance.WithLabelValues(
-		config.GetChainName(int(chainID.Int64())),
+		chains.GetChainName(int(chainID.Int64())),
 		symbol,
 	).Set(balanceFloat64)
 

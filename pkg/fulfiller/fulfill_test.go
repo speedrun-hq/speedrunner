@@ -3,75 +3,10 @@ package fulfiller
 import (
 	"github.com/speedrun-hq/speedrunner/pkg/fulfiller/mocks"
 	"math/big"
-	"sync"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient/simulated"
 	"github.com/stretchr/testify/assert"
 )
-
-// MockChainConfig provides a test double for a chain configuration
-type MockChainConfig struct {
-	IntentAddress string
-	Auth          *bind.TransactOpts
-	Client        *simulated.Backend
-}
-
-// TestConfig is a simplified test version of the Service config
-type TestConfig struct {
-	Chains map[int]*MockChainConfig
-}
-
-// TestService is a simplified version of the Service for testing
-type TestService struct {
-	mu             sync.Mutex
-	tokenAddresses map[int]common.Address
-	config         *TestConfig
-}
-
-// TestFulfillIntentApprovalLogic tests the token approval logic in the fulfillIntent method
-func TestFulfillIntentApprovalLogic(t *testing.T) {
-	// Skip in short mode
-	if testing.Short() {
-		t.Skip("Skipping test in short mode")
-	}
-
-	// Setup simulated blockchain
-	sim, auth := setupTestSimulation(t)
-	defer func(sim *simulated.Backend) {
-		err := sim.Close()
-		if err != nil {
-			t.Fatalf("Failed to close simulated backend: %v", err)
-		}
-	}(sim)
-
-	// Create test service
-	service := &TestService{
-		mu:             sync.Mutex{},
-		tokenAddresses: make(map[int]common.Address),
-		config: &TestConfig{
-			Chains: map[int]*MockChainConfig{
-				1: {
-					IntentAddress: "0x4444444444444444444444444444444444444444",
-					Auth:          auth,
-					Client:        sim,
-				},
-			},
-		},
-	}
-
-	// Set token address for test chain
-	tokenAddress := common.HexToAddress("0x5555555555555555555555555555555555555555")
-	service.tokenAddresses[1] = tokenAddress
-
-	// This is a partial test that just verifies the test setup works
-	t.Run("Test setup validation", func(t *testing.T) {
-		assert.NotNil(t, service.config.Chains[1])
-		assert.Equal(t, tokenAddress, service.tokenAddresses[1])
-	})
-}
 
 // TestMockTokenApproval verifies the token approval flow using our custom mocks
 func TestMockTokenApproval(t *testing.T) {

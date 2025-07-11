@@ -3,13 +3,13 @@ package fulfiller
 import (
 	"context"
 	"fmt"
-	"github.com/speedrun-hq/speedrunner/pkg/config"
 	"math/big"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/speedrun-hq/speedrunner/pkg/chains"
 	"github.com/speedrun-hq/speedrunner/pkg/contracts"
 	"github.com/speedrun-hq/speedrunner/pkg/metrics"
 	"github.com/speedrun-hq/speedrunner/pkg/models"
@@ -66,28 +66,14 @@ func (s *Service) fulfillIntent(intent models.Intent) error {
 	intentAddress := common.HexToAddress(chainConfig.IntentAddress)
 
 	// Get the token type from token address
-	tokenType := TokenType(config.GetTokenType(intent.Token))
+	tokenType := chains.GetTokenType(intent.Token)
 	if tokenType == "" {
 		return fmt.Errorf("token type not specified in intent: %s", intent.ID)
 	}
 
-	// Get token address from the map
-	s.mu.Lock()
-	chainTokens, exists := s.tokens[intent.DestinationChain]
-	s.mu.Unlock()
-
-	if !exists {
-		return fmt.Errorf("token mapping not configured for chain: %d", intent.DestinationChain)
-	}
-
-	token, exists := chainTokens[tokenType]
-	if !exists {
-		return fmt.Errorf("token type %s not configured for chain: %d", tokenType, intent.DestinationChain)
-	}
-
-	tokenAddress := token.Address
-	s.logger.DebugWithChain(intent.DestinationChain, "Using token %s (%s) address %s",
-		token.Symbol, tokenType, tokenAddress.Hex(),
+	tokenAddress := chains.GetTokenEthAddress(intent.DestinationChain, tokenType)
+	s.logger.DebugWithChain(intent.DestinationChain, "Using token %s address %s",
+		tokenType, tokenAddress.Hex(),
 	)
 
 	// First, approve the token transfer

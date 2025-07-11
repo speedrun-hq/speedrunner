@@ -1,16 +1,24 @@
-package config
+package chains
 
-import "strings"
+import (
+	"github.com/ethereum/go-ethereum/common"
+	"strings"
+)
 
-// chainNames maps chain IDs to their names
-var chainNames = map[int]string{
-	1:     "ETHEREUM",
-	137:   "POLYGON",
-	42161: "ARBITRUM",
-	43114: "AVALANCHE",
-	56:    "BSC",
-	7000:  "ZETACHAIN",
-	8453:  "BASE",
+// TokenType represents the type of token
+type TokenType string
+
+const (
+	// TokenTypeUSDC represents USDC token
+	TokenTypeUSDC TokenType = "USDC"
+	// TokenTypeUSDT represents USDT token
+	TokenTypeUSDT TokenType = "USDT"
+)
+
+// Tokenlist contains the supported token types
+var Tokenlist = []TokenType{
+	TokenTypeUSDC,
+	TokenTypeUSDT,
 }
 
 // usdcAddresses maps chain IDs to USDC contract addresses
@@ -35,17 +43,7 @@ var usdtAddresses = map[int]string{
 	8453:  "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb",
 }
 
-// GetChainName returns the name of the chain for a given chain ID
-func GetChainName(chainID int) string {
-	name, exists := chainNames[chainID]
-	if !exists {
-		return ""
-	}
-	return name
-}
-
-// GetUSDCAddress returns the USDC contract address for a given chain ID
-func GetUSDCAddress(chainID int) string {
+func getUSDCAddress(chainID int) string {
 	address, exists := usdcAddresses[chainID]
 	if !exists {
 		return ""
@@ -53,8 +51,7 @@ func GetUSDCAddress(chainID int) string {
 	return address
 }
 
-// GetUSDTAddress returns the USDT contract address for a given chain ID
-func GetUSDTAddress(chainID int) string {
+func getUSDTAddress(chainID int) string {
 	address, exists := usdtAddresses[chainID]
 	if !exists {
 		return ""
@@ -63,23 +60,43 @@ func GetUSDTAddress(chainID int) string {
 }
 
 // GetTokenType returns from the address the name of the token (USDC or USDT)
-// It walk through all addresses maps, compare with address converted to lowercase and returns the token type if found
 // return an empty string if not found
-func GetTokenType(address string) string {
+func GetTokenType(address string) TokenType {
 	// convert address to lowercase for case-insensitive comparison
 	address = strings.ToLower(address)
 
 	for _, usdcAddress := range usdcAddresses {
 		if strings.ToLower(usdcAddress) == address {
-			return "USDC"
+			return TokenTypeUSDC
 		}
 	}
 
 	for _, usdtAddress := range usdtAddresses {
 		if strings.ToLower(usdtAddress) == address {
-			return "USDT"
+			return TokenTypeUSDT
 		}
 	}
 
 	return ""
+}
+
+// GetTokenAddress returns the contract address for a given token type and chain ID
+func GetTokenAddress(chainID int, tokenType TokenType) string {
+	switch tokenType {
+	case TokenTypeUSDC:
+		return getUSDCAddress(chainID)
+	case TokenTypeUSDT:
+		return getUSDTAddress(chainID)
+	default:
+		return ""
+	}
+}
+
+// GetTokenEthAddress returns the Ethereum address for a given token type
+func GetTokenEthAddress(chainID int, tokenType TokenType) common.Address {
+	address := GetTokenAddress(chainID, tokenType)
+	if address == "" {
+		return common.Address{}
+	}
+	return common.HexToAddress(address)
 }

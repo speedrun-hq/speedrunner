@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/speedrun-hq/speedrunner/pkg/logger"
 	"io"
 	"math/big"
 	"net/http"
@@ -13,29 +12,21 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/speedrun-hq/speedrunner/pkg/chains"
 	"github.com/speedrun-hq/speedrunner/pkg/circuitbreaker"
 	"github.com/speedrun-hq/speedrunner/pkg/config"
 	"github.com/speedrun-hq/speedrunner/pkg/contracts"
 	"github.com/speedrun-hq/speedrunner/pkg/health"
+	"github.com/speedrun-hq/speedrunner/pkg/logger"
 	"github.com/speedrun-hq/speedrunner/pkg/metrics"
 	"github.com/speedrun-hq/speedrunner/pkg/models"
-)
-
-// TokenType represents the type of token
-type TokenType string
-
-const (
-	// TokenTypeUSDC represents USDC token
-	TokenTypeUSDC TokenType = "USDC"
-	// TokenTypeUSDT represents USDT token
-	TokenTypeUSDT TokenType = "USDT"
 )
 
 // Token represents a token with its address and metadata
 type Token struct {
 	Address common.Address
 	Symbol  string
-	Type    TokenType
+	Type    chains.TokenType
 }
 
 // APIResponse represents the structure of the API response
@@ -54,8 +45,6 @@ type Service struct {
 	config          *config.Config
 	httpClient      *http.Client
 	mu              sync.Mutex
-	tokens          map[int]map[TokenType]Token
-	tokenAddressMap map[common.Address]TokenType // Map for quick token type lookups
 	workers         int
 	pendingJobs     chan models.Intent
 	retryJobs       chan models.RetryJob
@@ -75,18 +64,6 @@ func NewService(cfg *config.Config) (*Service, error) {
 		}
 	}
 
-	// Initialize tokens map
-	tokens := make(map[int]map[TokenType]Token)
-	tokenAddressMap := make(map[common.Address]TokenType)
-
-	// Initialize token map for each chain
-	for chainID := range cfg.Chains {
-		tokens[chainID] = make(map[TokenType]Token)
-	}
-
-	// Set token addresses for each chain from environment variables
-	initializeTokens(tokens, tokenAddressMap)
-
 	// Initialize circuit breakers
 	circuitBreakers := make(map[int]*circuitbreaker.CircuitBreaker)
 	for chainID := range cfg.Chains {
@@ -102,8 +79,6 @@ func NewService(cfg *config.Config) (*Service, error) {
 	return &Service{
 		config:          cfg,
 		httpClient:      createHTTPClient(),
-		tokens:          tokens,
-		tokenAddressMap: tokenAddressMap,
 		workers:         cfg.WorkerCount,
 		pendingJobs:     make(chan models.Intent, 100),   // Buffer for pending intents
 		retryJobs:       make(chan models.RetryJob, 100), // Buffer for retry jobs
@@ -330,25 +305,22 @@ func (s *Service) hasSufficientBalance(intent models.Intent) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Get token address from the intent
-	tokenAddress := common.HexToAddress(intent.Token)
-
 	// Get token type from address
-	tokenType := s.getTokenTypeFromAddress(tokenAddress)
+	tokenType := chains.GetTokenType(intent.Token)
 	if tokenType == "" {
-		s.logger.DebugWithChain(intent.DestinationChain, "Unknown token type for address %s", tokenAddress.Hex())
+		s.logger.DebugWithChain(intent.DestinationChain, "Unknown token type for address %s", intent.Token)
 		return false
 	}
 
 	// Get token for the destination chain
-	token, exists := s.tokens[intent.DestinationChain][tokenType]
-	if !exists {
-		s.logger.DebugWithChain(intent.DestinationChain, "Token %s not configured", tokenType)
+	token := chains.GetTokenEthAddress(intent.DestinationChain, tokenType)
+	if token == (common.Address{}) {
+		s.logger.DebugWithChain(intent.DestinationChain, "Invalid token address for %s", tokenType)
 		return false
 	}
 
 	// Get token balance
-	balance, err := s.getTokenBalance(intent.DestinationChain, token.Address)
+	balance, err := s.getTokenBalance(intent.DestinationChain, token)
 	if err != nil {
 		s.logger.DebugWithChain(intent.DestinationChain, "Error getting token balance: %v", err)
 		return false
@@ -407,60 +379,6 @@ func createHTTPClient() *http.Client {
 			MaxIdleConnsPerHost: 100,
 			IdleConnTimeout:     90 * time.Second,
 		},
-	}
-}
-
-// Helper function to initialize token addresses
-func initializeTokens(tokens map[int]map[TokenType]Token, tokenAddressMap map[common.Address]TokenType) {
-	// Define chains
-	// TODO: centralize in config
-	chainList := []int{8453, 42161, 137, 1, 43114, 56, 7000}
-
-	// Define token types
-	tokenTypes := []struct {
-		tokenType TokenType
-		symbol    string
-	}{
-		{TokenTypeUSDC, "USDC"},
-		{TokenTypeUSDT, "USDT"},
-	}
-
-	// Initialize tokens for each chain and token type
-	for _, chainID := range chainList {
-		// Ensure the chain map exists
-		if _, exists := tokens[chainID]; !exists {
-			tokens[chainID] = make(map[TokenType]Token)
-		}
-
-		for _, tokenInfo := range tokenTypes {
-			var tokenAddrStr string
-
-			switch tokenInfo.tokenType {
-			case TokenTypeUSDC:
-				tokenAddrStr = config.GetUSDCAddress(chainID)
-			case TokenTypeUSDT:
-				tokenAddrStr = config.GetUSDTAddress(chainID)
-			default:
-				tokenAddrStr = ""
-			}
-			if tokenAddrStr == "" {
-				continue
-			}
-			tokenAddr := common.HexToAddress(tokenAddrStr)
-			if tokenAddr == (common.Address{}) {
-				continue
-			}
-
-			// Initialize token
-			tokens[chainID][tokenInfo.tokenType] = Token{
-				Address: tokenAddr,
-				Symbol:  tokenInfo.symbol,
-				Type:    tokenInfo.tokenType,
-			}
-
-			// Add to address map for quick lookups
-			tokenAddressMap[tokenAddr] = tokenInfo.tokenType
-		}
 	}
 }
 
@@ -565,30 +483,31 @@ func (s *Service) isGasPriceAcceptable(chainID int) bool {
 	return true
 }
 
-// getTokenTypeFromAddress determines the token type based on the token address
-func (s *Service) getTokenTypeFromAddress(address common.Address) TokenType {
-	return s.tokenAddressMap[address]
-}
-
 // updateMetrics updates Prometheus metrics
 func (s *Service) updateMetrics() {
 	s.logger.Debug("Starting metrics update...")
 
 	// Update token balance metrics
-	for chainID, chainTokens := range s.tokens {
-		chainName := config.GetChainName(chainID)
+	for _, chainID := range chains.ChainList {
+		chainName := chains.GetChainName(chainID)
 		s.logger.DebugWithChain(chainID, "Processing token balances")
 
-		for tokenType, token := range chainTokens {
+		for _, tokenType := range chains.Tokenlist {
 
-			balance, err := s.getTokenBalance(chainID, token.Address)
+			tokenAddress := chains.GetTokenEthAddress(chainID, tokenType)
+			if tokenAddress == (common.Address{}) {
+				s.logger.DebugWithChain(chainID, "No token address found for %s", tokenType)
+				continue
+			}
+
+			balance, err := s.getTokenBalance(chainID, tokenAddress)
 			if err != nil {
 				s.logger.DebugWithChain(chainID, "Error getting token balance for %s: %v", tokenType, err)
 				continue
 			}
 
 			// Get token decimals for logging
-			token, err := contracts.NewERC20(token.Address, s.config.Chains[chainID].Client)
+			token, err := contracts.NewERC20(tokenAddress, s.config.Chains[chainID].Client)
 			if err != nil {
 				s.logger.DebugWithChain(chainID, "Error creating token contract for %s: %v", tokenType, err)
 				continue
@@ -613,7 +532,7 @@ func (s *Service) updateMetrics() {
 
 	// Update gas price metrics
 	for chainID, chainConfig := range s.config.Chains {
-		chainName := config.GetChainName(chainID)
+		chainName := chains.GetChainName(chainID)
 		if chainName == "" {
 			chainName = "Unknown"
 		}
