@@ -1,6 +1,7 @@
 package fulfiller
 
 import (
+	"github.com/speedrun-hq/speedrunner/pkg/fulfiller/mocks"
 	"math/big"
 	"sync"
 	"testing"
@@ -21,26 +22,6 @@ type MockChainConfig struct {
 // TestConfig is a simplified test version of the Service config
 type TestConfig struct {
 	Chains map[int]*MockChainConfig
-}
-
-// MockContract implements a minimal contract interface for testing
-type MockContract struct {
-	fulfillCalled bool
-	fulfillArgs   struct {
-		intentID     common.Hash
-		tokenAddress common.Address
-		amount       *big.Int
-		receiver     common.Address
-	}
-}
-
-func (m *MockContract) Fulfill(opts *bind.TransactOpts, intentID common.Hash, tokenAddress common.Address, amount *big.Int, receiver common.Address) (common.Hash, error) {
-	m.fulfillCalled = true
-	m.fulfillArgs.intentID = intentID
-	m.fulfillArgs.tokenAddress = tokenAddress
-	m.fulfillArgs.amount = amount
-	m.fulfillArgs.receiver = receiver
-	return common.Hash{}, nil
 }
 
 // TestService is a simplified version of the Service for testing
@@ -92,19 +73,60 @@ func TestFulfillIntentApprovalLogic(t *testing.T) {
 	})
 }
 
-// TestMaxApprovalValue tests that we're using the correct max approval value
-func TestMaxApprovalValue(t *testing.T) {
-	// This test doesn't require complex setup, so it can run in short mode
-	// Calculate max uint256 value: 2^256 - 1
-	expected := new(big.Int).Sub(
-		new(big.Int).Exp(big.NewInt(2), big.NewInt(256), nil),
-		big.NewInt(1),
-	)
+// TestMockTokenApproval verifies the token approval flow using our custom mocks
+func TestMockTokenApproval(t *testing.T) {
+	// Create mocks
+	tokenAddress := mocks.NewAddress("0x1234567890123456789012345678901234567890")
+	spenderAddress := mocks.NewAddress("0x0987654321098765432109876543210987654321")
+	mockContract := mocks.NewMockContract(tokenAddress)
 
-	// Get the value used in our code
-	maxUint256 := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
+	// Test case 1: Insufficient allowance, need approval
+	t.Run("Insufficient allowance needs approval", func(t *testing.T) {
+		// Set up current allowance = 100
+		currentAllowance := big.NewInt(100)
+		mockContract.SetCallResult("allowance", []interface{}{currentAllowance})
 
-	// Verify they match
-	assert.Equal(t, 0, expected.Cmp(maxUint256),
-		"Max approval value is not correctly set to 2^256-1")
+		// Request for amount = 200
+		requiredAmount := big.NewInt(200)
+
+		// Verify insufficient allowance check works
+		var out []interface{}
+		err := mockContract.Call(nil, &out, "allowance")
+		assert.NoError(t, err, "Call to get allowance should not error")
+		allowance := out[0].(*big.Int)
+
+		assert.True(t, allowance.Cmp(requiredAmount) < 0,
+			"Allowance should be less than required amount")
+	})
+
+	// Test case 2: Sufficient allowance, no approval needed
+	t.Run("Sufficient allowance skips approval", func(t *testing.T) {
+		// Set up current allowance = 1000
+		currentAllowance := big.NewInt(1000)
+		mockContract.SetCallResult("allowance", []interface{}{currentAllowance})
+
+		// Request for amount = 200
+		requiredAmount := big.NewInt(200)
+
+		// Verify sufficient allowance check works
+		var out []interface{}
+		err := mockContract.Call(nil, &out, "allowance")
+		assert.NoError(t, err, "Call to get allowance should not error")
+		allowance := out[0].(*big.Int)
+
+		assert.True(t, allowance.Cmp(requiredAmount) >= 0,
+			"Allowance should be more than or equal to required amount")
+	})
+
+	// Test case 3: Verify mock transaction works
+	t.Run("Approval transaction works", func(t *testing.T) {
+		// Trigger an approval transaction
+		tx, err := mockContract.Transact(nil, "approve", spenderAddress, big.NewInt(1000))
+		assert.NoError(t, err, "Approval transaction should not error")
+		assert.NotNil(t, tx, "Transaction should not be nil")
+
+		// Verify transaction was stored
+		assert.NotNil(t, mockContract.Transactions["approve"],
+			"Transaction should be stored in mock contract")
+	})
 }

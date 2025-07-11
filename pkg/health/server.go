@@ -47,6 +47,87 @@ func NewServer(
 	}
 }
 
+// Start starts the health check server
+func (s *Server) Start() {
+	// Health check endpoint
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("OK"))
+	})
+
+	// Readiness check
+	http.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+		// Check if all chain clients are connected
+		for chainID, chainConfig := range s.chains {
+			if chainConfig.Client == nil {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = fmt.Fprintf(w, "Chain %d client not connected", chainID)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("Ready"))
+	})
+
+	// Chain status endpoint
+	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		status := make(map[string]interface{})
+
+		for chainID, chainConfig := range s.chains {
+			status[fmt.Sprintf("chain_%d", chainID)] = s.getChainStatus(r.Context(), chainID, chainConfig)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(status); err != nil {
+			s.logger.Error("Error encoding status JSON: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte("Failed to encode status"))
+		}
+	})
+
+	// Circuit breaker admin control endpoint
+	http.HandleFunc("/circuit/reset", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			_, _ = w.Write([]byte("Method not allowed"))
+			return
+		}
+
+		chainIDStr := r.URL.Query().Get("chain")
+		if chainIDStr == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte("Missing chain parameter"))
+			return
+		}
+
+		chainID, err := strconv.Atoi(chainIDStr)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte("Invalid chain ID"))
+			return
+		}
+
+		cb, ok := s.circuitBreakers[chainID]
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = fmt.Fprintf(w, "No circuit breaker for chain %d", chainID)
+			return
+		}
+
+		cb.Reset()
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprintf(w, "Circuit breaker for chain %d reset", chainID)
+	})
+
+	// Expose Prometheus metrics with API key authentication
+	http.Handle("/metrics", s.metricsAuthMiddleware(promhttp.Handler()))
+
+	s.logger.Notice("Starting health and metrics server on port %s", s.port)
+	if err := http.ListenAndServe(":"+s.port, nil); err != nil {
+		s.logger.Error("Health server error: %v", err)
+	}
+}
+
 // metricsAuthMiddleware is a middleware that checks for a valid API key
 func (s *Server) metricsAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -145,87 +226,6 @@ func (s *Server) getChainStatus(ctx context.Context, chainID int, config *blockc
 	}
 
 	return chainStatus
-}
-
-// Start starts the health check server
-func (s *Server) Start() {
-	// Health check endpoint
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("OK"))
-	})
-
-	// Readiness check
-	http.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
-		// Check if all chain clients are connected
-		for chainID, chainConfig := range s.chains {
-			if chainConfig.Client == nil {
-				w.WriteHeader(http.StatusServiceUnavailable)
-				_, _ = fmt.Fprintf(w, "Chain %d client not connected", chainID)
-				return
-			}
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("Ready"))
-	})
-
-	// Chain status endpoint
-	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
-		status := make(map[string]interface{})
-
-		for chainID, chainConfig := range s.chains {
-			status[fmt.Sprintf("chain_%d", chainID)] = s.getChainStatus(r.Context(), chainID, chainConfig)
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(status); err != nil {
-			s.logger.Error("Error encoding status JSON: %v", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			_, _ = w.Write([]byte("Failed to encode status"))
-		}
-	})
-
-	// Circuit breaker admin control endpoint
-	http.HandleFunc("/circuit/reset", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			_, _ = w.Write([]byte("Method not allowed"))
-			return
-		}
-
-		chainIDStr := r.URL.Query().Get("chain")
-		if chainIDStr == "" {
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = w.Write([]byte("Missing chain parameter"))
-			return
-		}
-
-		chainID, err := strconv.Atoi(chainIDStr)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = w.Write([]byte("Invalid chain ID"))
-			return
-		}
-
-		cb, ok := s.circuitBreakers[chainID]
-		if !ok {
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = fmt.Fprintf(w, "No circuit breaker for chain %d", chainID)
-			return
-		}
-
-		cb.Reset()
-		w.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprintf(w, "Circuit breaker for chain %d reset", chainID)
-	})
-
-	// Expose Prometheus metrics with API key authentication
-	http.Handle("/metrics", s.metricsAuthMiddleware(promhttp.Handler()))
-
-	s.logger.Notice("Starting health and metrics server on port %s", s.port)
-	if err := http.ListenAndServe(":"+s.port, nil); err != nil {
-		s.logger.Error("Health server error: %v", err)
-	}
 }
 
 // getTokenBalance retrieves the token balance for a given address

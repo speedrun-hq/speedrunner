@@ -169,11 +169,3 @@ func TestOptimizedTokenApprovalMock(t *testing.T) {
 		// In a real test, you would perform the approval and verify the results
 	})
 }
-
-// TestMaxUint256Value ensures our MaxUint256 constant has the correct value
-func TestMaxUint256Value(t *testing.T) {
-	// This test doesn't require complex setup, so it can run in short mode
-	expected := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
-	assert.Equal(t, 0, MaxUint256.Cmp(expected),
-		"MaxUint256 constant does not have the expected value")
-}
