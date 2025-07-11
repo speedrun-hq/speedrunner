@@ -1,4 +1,4 @@
-package blockchain
+package chainclient
 
 import (
 	"context"
@@ -15,8 +15,8 @@ import (
 	"github.com/speedrun-hq/speedrunner/pkg/contracts"
 )
 
-// ChainConfig holds the configuration for a specific chain
-type ChainConfig struct {
+// Client contains client and config information for a specific blockchain
+type Client struct {
 	ChainID        int
 	RPCURL         string
 	IntentAddress  string
@@ -28,9 +28,9 @@ type ChainConfig struct {
 	GasMultiplier  float64
 }
 
-// NewChainConfig creates a chain configuration from environment variables
+// New creates a new client
 // TODO: should return error for invalid values to avoid unexpected behavior
-func NewChainConfig(chainID int, rpcURL string, intentAddress string, minFee string) *ChainConfig {
+func New(chainID int, rpcURL string, intentAddress string, minFee string) *Client {
 	minFeeBig := big.NewInt(0)
 	if minFee != "" {
 		var success bool
@@ -51,7 +51,7 @@ func NewChainConfig(chainID int, rpcURL string, intentAddress string, minFee str
 		}
 	}
 
-	return &ChainConfig{
+	return &Client{
 		ChainID:       chainID,
 		RPCURL:        rpcURL,
 		IntentAddress: intentAddress,
@@ -61,7 +61,7 @@ func NewChainConfig(chainID int, rpcURL string, intentAddress string, minFee str
 }
 
 // Connect establishes connections to blockchain RPC and initializes contract instances
-func (c *ChainConfig) Connect(privateKey string) error {
+func (c *Client) Connect(privateKey string) error {
 	// Connect to Ethereum client
 	client, err := ethclient.Dial(c.RPCURL)
 	if err != nil {
@@ -89,7 +89,7 @@ func (c *ChainConfig) Connect(privateKey string) error {
 }
 
 // UpdateGasPrice updates the gas price based on current network conditions
-func (c *ChainConfig) UpdateGasPrice(ctx context.Context) (*big.Int, error) {
+func (c *Client) UpdateGasPrice(ctx context.Context) (*big.Int, error) {
 	if c.Client == nil {
 		return nil, fmt.Errorf("client not connected")
 	}
@@ -122,7 +122,7 @@ func (c *ChainConfig) UpdateGasPrice(ctx context.Context) (*big.Int, error) {
 }
 
 // GetLatestBlockNumber gets the latest block number from the chain
-func (c *ChainConfig) GetLatestBlockNumber(ctx context.Context) (uint64, error) {
+func (c *Client) GetLatestBlockNumber(ctx context.Context) (uint64, error) {
 	if c.Client == nil {
 		return 0, fmt.Errorf("client not connected")
 	}

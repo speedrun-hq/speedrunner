@@ -14,7 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/speedrun-hq/speedrunner/pkg/blockchain"
+	"github.com/speedrun-hq/speedrunner/pkg/chainclient"
 	"github.com/speedrun-hq/speedrunner/pkg/chains"
 	"github.com/speedrun-hq/speedrunner/pkg/circuitbreaker"
 	"github.com/speedrun-hq/speedrunner/pkg/contracts"
@@ -25,7 +25,7 @@ import (
 // Server represents a health check HTTP server
 type Server struct {
 	port            string
-	chains          map[int]*blockchain.ChainConfig
+	chains          map[int]*chainclient.Client
 	circuitBreakers map[int]*circuitbreaker.CircuitBreaker
 	metricsAPIKey   string
 	logger          logger.Logger
@@ -34,7 +34,7 @@ type Server struct {
 // NewServer creates a new health check server
 func NewServer(
 	port string,
-	chains map[int]*blockchain.ChainConfig,
+	chains map[int]*chainclient.Client,
 	circuitBreakers map[int]*circuitbreaker.CircuitBreaker,
 	logger logger.Logger,
 ) *Server {
@@ -162,7 +162,7 @@ func (s *Server) metricsAuthMiddleware(next http.Handler) http.Handler {
 }
 
 // getTokenBalances retrieves balances for configured tokens on a chain
-func (s *Server) getTokenBalances(ctx context.Context, chainID int, chainConfig *blockchain.ChainConfig) map[string]interface{} {
+func (s *Server) getTokenBalances(ctx context.Context, chainID int, chainConfig *chainclient.Client) map[string]interface{} {
 	tokenBalances := make(map[string]interface{})
 
 	chainName := chains.GetChainName(chainID)
@@ -197,7 +197,7 @@ func (s *Server) getTokenBalances(ctx context.Context, chainID int, chainConfig 
 }
 
 // getChainStatus returns the status information for a specific chain
-func (s *Server) getChainStatus(ctx context.Context, chainID int, config *blockchain.ChainConfig) map[string]interface{} {
+func (s *Server) getChainStatus(ctx context.Context, chainID int, config *chainclient.Client) map[string]interface{} {
 	circuitStatus := "closed"
 	if cb, ok := s.circuitBreakers[chainID]; ok && cb.IsOpen() {
 		circuitStatus = "open"
