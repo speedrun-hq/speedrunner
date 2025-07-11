@@ -2,14 +2,14 @@ package config
 
 import (
 	"fmt"
-	"github.com/speedrun-hq/speedrunner/pkg/logger"
 	"log"
 	"math/big"
 	"os"
 	"time"
 
 	"github.com/joho/godotenv"
-	"github.com/speedrun-hq/speedrunner/pkg/blockchain"
+	"github.com/speedrun-hq/speedrunner/pkg/chainclient"
+	"github.com/speedrun-hq/speedrunner/pkg/logger"
 )
 
 // Config holds the configuration for the fulfiller service
@@ -18,7 +18,7 @@ type Config struct {
 	PollingInterval  time.Duration
 	FulfillerAddress string
 	PrivateKey       string
-	Chains           map[int]*blockchain.ChainConfig
+	Chains           map[int]*chainclient.Client
 	WorkerCount      int
 	MetricsPort      string
 	CircuitBreaker   CircuitBreakerConfig
@@ -114,7 +114,7 @@ func LoadConfig() (*Config, error) {
 	}
 
 	// Initialize chain configurations
-	chainConfigs := make(map[int]*blockchain.ChainConfig)
+	chainConfigs := make(map[int]*chainclient.Client)
 	chainConfigList, err := GetEnvChainConfigs(mainnet)
 	if err != nil {
 		return nil, err

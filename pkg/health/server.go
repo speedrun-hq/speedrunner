@@ -14,9 +14,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/speedrun-hq/speedrunner/pkg/blockchain"
+	"github.com/speedrun-hq/speedrunner/pkg/chainclient"
+	"github.com/speedrun-hq/speedrunner/pkg/chains"
 	"github.com/speedrun-hq/speedrunner/pkg/circuitbreaker"
-	"github.com/speedrun-hq/speedrunner/pkg/config"
 	"github.com/speedrun-hq/speedrunner/pkg/contracts"
 	"github.com/speedrun-hq/speedrunner/pkg/logger"
 	"github.com/speedrun-hq/speedrunner/pkg/metrics"
@@ -25,7 +25,7 @@ import (
 // Server represents a health check HTTP server
 type Server struct {
 	port            string
-	chains          map[int]*blockchain.ChainConfig
+	chains          map[int]*chainclient.Client
 	circuitBreakers map[int]*circuitbreaker.CircuitBreaker
 	metricsAPIKey   string
 	logger          logger.Logger
@@ -34,7 +34,7 @@ type Server struct {
 // NewServer creates a new health check server
 func NewServer(
 	port string,
-	chains map[int]*blockchain.ChainConfig,
+	chains map[int]*chainclient.Client,
 	circuitBreakers map[int]*circuitbreaker.CircuitBreaker,
 	logger logger.Logger,
 ) *Server {
@@ -45,106 +45,6 @@ func NewServer(
 		metricsAPIKey:   os.Getenv("METRICS_API_KEY"),
 		logger:          logger,
 	}
-}
-
-// metricsAuthMiddleware is a middleware that checks for a valid API key
-func (s *Server) metricsAuthMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Skip auth if no API key is configured
-		if s.metricsAPIKey == "" {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		// Get API key from Authorization header
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "Missing Authorization header", http.StatusUnauthorized)
-			return
-		}
-
-		// Check if the header has the correct format
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			http.Error(w, "Invalid Authorization header format", http.StatusUnauthorized)
-			return
-		}
-
-		// Validate API key
-		if parts[1] != s.metricsAPIKey {
-			http.Error(w, "Invalid API key", http.StatusUnauthorized)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
-}
-
-// getTokenBalances retrieves balances for configured tokens on a chain
-func (s *Server) getTokenBalances(ctx context.Context, chainID int, chainConfig *blockchain.ChainConfig) map[string]interface{} {
-	tokenBalances := make(map[string]interface{})
-
-	chainName := config.GetChainName(chainID)
-	if chainName == "" {
-		s.logger.Info("Warning: Unknown chain ID %d", chainID)
-		return tokenBalances
-	}
-
-	// Get USDC balance
-	if usdcAddr := config.GetUSDCAddress(chainID); usdcAddr != "" {
-		if balance, err := s.getTokenBalance(ctx, chainConfig.Client, common.HexToAddress(usdcAddr), chainConfig.Auth.From); err == nil {
-			tokenBalances["USDC"] = balance.String()
-		} else {
-			s.logger.Info("Warning: Failed to get USDC balance for chain %s: %v", chainName, err)
-		}
-	} else {
-		s.logger.Info("Warning: No USDC address configured for chain %s", chainName)
-	}
-
-	// Get USDT balance
-	if usdtAddr := config.GetUSDTAddress(chainID); usdtAddr != "" {
-		if balance, err := s.getTokenBalance(ctx, chainConfig.Client, common.HexToAddress(usdtAddr), chainConfig.Auth.From); err == nil {
-			tokenBalances["USDT"] = balance.String()
-		} else {
-			s.logger.Info("Warning: Failed to get USDT balance for chain %s: %v", chainName, err)
-		}
-	} else {
-		s.logger.Info("Warning: No USDT address configured for chain %s", chainName)
-	}
-
-	return tokenBalances
-}
-
-// getChainStatus returns the status information for a specific chain
-func (s *Server) getChainStatus(ctx context.Context, chainID int, config *blockchain.ChainConfig) map[string]interface{} {
-	circuitStatus := "closed"
-	if cb, ok := s.circuitBreakers[chainID]; ok && cb.IsOpen() {
-		circuitStatus = "open"
-	}
-
-	chainStatus := map[string]interface{}{
-		"rpc_url":        config.RPCURL,
-		"intent_address": config.IntentAddress,
-		"connected":      config.Client != nil,
-		"circuit":        circuitStatus,
-	}
-
-	// Get latest block number if connected
-	if config.Client != nil {
-		blockNumber, err := config.GetLatestBlockNumber(ctx)
-		if err == nil {
-			chainStatus["latest_block"] = blockNumber
-		} else {
-			s.logger.InfoWithChain(chainID, "Warning: Failed to get latest block for chain %d: %v", err)
-		}
-
-		// Get token balances
-		if tokenBalances := s.getTokenBalances(ctx, chainID, config); len(tokenBalances) > 0 {
-			chainStatus["token_balances"] = tokenBalances
-		}
-	}
-
-	return chainStatus
 }
 
 // Start starts the health check server
@@ -228,6 +128,106 @@ func (s *Server) Start() {
 	}
 }
 
+// metricsAuthMiddleware is a middleware that checks for a valid API key
+func (s *Server) metricsAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip auth if no API key is configured
+		if s.metricsAPIKey == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Get API key from Authorization header
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Missing Authorization header", http.StatusUnauthorized)
+			return
+		}
+
+		// Check if the header has the correct format
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			http.Error(w, "Invalid Authorization header format", http.StatusUnauthorized)
+			return
+		}
+
+		// Validate API key
+		if parts[1] != s.metricsAPIKey {
+			http.Error(w, "Invalid API key", http.StatusUnauthorized)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// getTokenBalances retrieves balances for configured tokens on a chain
+func (s *Server) getTokenBalances(ctx context.Context, chainID int, chainConfig *chainclient.Client) map[string]interface{} {
+	tokenBalances := make(map[string]interface{})
+
+	chainName := chains.GetChainName(chainID)
+	if chainName == "" {
+		s.logger.Info("Warning: Unknown chain ID %d", chainID)
+		return tokenBalances
+	}
+
+	// Get USDC balance
+	if usdcAddr := chains.GetTokenAddress(chainID, chains.TokenTypeUSDC); usdcAddr != "" {
+		if balance, err := s.getTokenBalance(ctx, chainConfig.Client, common.HexToAddress(usdcAddr), chainConfig.Auth.From); err == nil {
+			tokenBalances["USDC"] = balance.String()
+		} else {
+			s.logger.Info("Warning: Failed to get USDC balance for chain %s: %v", chainName, err)
+		}
+	} else {
+		s.logger.Info("Warning: No USDC address configured for chain %s", chainName)
+	}
+
+	// Get USDT balance
+	if usdtAddr := chains.GetTokenAddress(chainID, chains.TokenTypeUSDT); usdtAddr != "" {
+		if balance, err := s.getTokenBalance(ctx, chainConfig.Client, common.HexToAddress(usdtAddr), chainConfig.Auth.From); err == nil {
+			tokenBalances["USDT"] = balance.String()
+		} else {
+			s.logger.Info("Warning: Failed to get USDT balance for chain %s: %v", chainName, err)
+		}
+	} else {
+		s.logger.Info("Warning: No USDT address configured for chain %s", chainName)
+	}
+
+	return tokenBalances
+}
+
+// getChainStatus returns the status information for a specific chain
+func (s *Server) getChainStatus(ctx context.Context, chainID int, config *chainclient.Client) map[string]interface{} {
+	circuitStatus := "closed"
+	if cb, ok := s.circuitBreakers[chainID]; ok && cb.IsOpen() {
+		circuitStatus = "open"
+	}
+
+	chainStatus := map[string]interface{}{
+		"rpc_url":        config.RPCURL,
+		"intent_address": config.IntentAddress,
+		"connected":      config.Client != nil,
+		"circuit":        circuitStatus,
+	}
+
+	// Get latest block number if connected
+	if config.Client != nil {
+		blockNumber, err := config.GetLatestBlockNumber(ctx)
+		if err == nil {
+			chainStatus["latest_block"] = blockNumber
+		} else {
+			s.logger.InfoWithChain(chainID, "Warning: Failed to get latest block for chain %d: %v", err)
+		}
+
+		// Get token balances
+		if tokenBalances := s.getTokenBalances(ctx, chainID, config); len(tokenBalances) > 0 {
+			chainStatus["token_balances"] = tokenBalances
+		}
+	}
+
+	return chainStatus
+}
+
 // getTokenBalance retrieves the token balance for a given address
 func (s *Server) getTokenBalance(ctx context.Context, client *ethclient.Client, tokenAddress, ownerAddress common.Address) (*big.Int, error) {
 	token, err := contracts.NewERC20(tokenAddress, client)
@@ -275,7 +275,7 @@ func (s *Server) getTokenBalance(ctx context.Context, client *ethclient.Client, 
 
 	// Update Prometheus metric
 	metrics.TokenBalance.WithLabelValues(
-		config.GetChainName(int(chainID.Int64())),
+		chains.GetChainName(int(chainID.Int64())),
 		symbol,
 	).Set(balanceFloat64)
 

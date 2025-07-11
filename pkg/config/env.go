@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/speedrun-hq/speedrunner/pkg/blockchain"
+	"github.com/speedrun-hq/speedrunner/pkg/chainclient"
 	"github.com/speedrun-hq/speedrunner/pkg/logger"
 )
 
@@ -353,7 +353,7 @@ func GetEnvLogColoring() (bool, error) {
 
 // GetEnvChainConfigs returns the chain configurations for all supported network based on the environment variables and network type
 // TODO: refactor this to use a more generic approach for all chains
-func GetEnvChainConfigs(network string) ([]*blockchain.ChainConfig, error) {
+func GetEnvChainConfigs(network string) ([]*chainclient.Client, error) {
 	// only mainnet currently supported
 	if network != mainnet {
 		return nil, fmt.Errorf("unsupported network: %s, only 'mainnet' is supported", network)
@@ -372,7 +372,7 @@ func GetEnvChainConfigs(network string) ([]*blockchain.ChainConfig, error) {
 	if minFee == "" {
 		minFee = DefaultBaseMainnetMinFee
 	}
-	baseConfig := blockchain.NewChainConfig(
+	baseConfig := chainclient.New(
 		BaseMainnetChainID,
 		rpc,
 		intent,
@@ -392,7 +392,7 @@ func GetEnvChainConfigs(network string) ([]*blockchain.ChainConfig, error) {
 	if arbitrumMinFee == "" {
 		arbitrumMinFee = DefaultArbitrumMainnetMinFee
 	}
-	arbitrumConfig := blockchain.NewChainConfig(
+	arbitrumConfig := chainclient.New(
 		ArbitrumMainnetChainID,
 		arbitrumRPC,
 		arbitrumIntent,
@@ -413,7 +413,7 @@ func GetEnvChainConfigs(network string) ([]*blockchain.ChainConfig, error) {
 	if polygonMinFee == "" {
 		polygonMinFee = DefaultPolygonMainnetMinFee
 	}
-	polygonConfig := blockchain.NewChainConfig(
+	polygonConfig := chainclient.New(
 		PolygonMainnetChainID,
 		polygonRPC,
 		polygonIntent,
@@ -432,7 +432,7 @@ func GetEnvChainConfigs(network string) ([]*blockchain.ChainConfig, error) {
 	if ethereumMinFee == "" {
 		ethereumMinFee = DefaultEthereumMainnetMinFee
 	}
-	ethereumConfig := blockchain.NewChainConfig(
+	ethereumConfig := chainclient.New(
 		EthereumMainnetChainID,
 		ethereumRPC,
 		ethereumIntent,
@@ -452,7 +452,7 @@ func GetEnvChainConfigs(network string) ([]*blockchain.ChainConfig, error) {
 	if avalancheMinFee == "" {
 		avalancheMinFee = DefaultAvalancheMainnetMinFee
 	}
-	avalancheConfig := blockchain.NewChainConfig(
+	avalancheConfig := chainclient.New(
 		AvalancheMainnetChainID,
 		avalancheRPC,
 		avalancheIntent,
@@ -472,7 +472,7 @@ func GetEnvChainConfigs(network string) ([]*blockchain.ChainConfig, error) {
 	if bscMinFee == "" {
 		bscMinFee = DefaultBSCMainnetMinFee
 	}
-	bscConfig := blockchain.NewChainConfig(
+	bscConfig := chainclient.New(
 		BSCMainnetChainID,
 		bscRPC,
 		bscIntent,
@@ -492,14 +492,14 @@ func GetEnvChainConfigs(network string) ([]*blockchain.ChainConfig, error) {
 	if zetachainMinFee == "" {
 		zetachainMinFee = DefaultZetaChainMainnetMinFee
 	}
-	zetachainConfig := blockchain.NewChainConfig(
+	zetachainConfig := chainclient.New(
 		ZetaChainMainnetChainID,
 		zetachainRPC,
 		zetachainIntent,
 		zetachainMinFee,
 	)
 
-	return []*blockchain.ChainConfig{
+	return []*chainclient.Client{
 		baseConfig,
 		arbitrumConfig,
 		polygonConfig,

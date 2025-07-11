@@ -42,7 +42,7 @@ func (s *Service) worker(ctx context.Context, id int) {
 			// Record start time for processing duration metric
 			startTime := time.Now()
 
-			err := s.fulfillIntent(intent)
+			err := s.fulfillIntent(ctx, intent)
 
 			// Record processing time
 			processingTime := time.Since(startTime).Seconds()
