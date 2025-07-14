@@ -26,10 +26,12 @@ func (s *Fulfiller) fulfillIntent(ctx context.Context, intent models.Intent) err
 	}
 
 	// Update gas price before transaction
-	finalGasPrice, err := chainClient.UpdateGasPrice(ctx)
-	if err != nil {
-		s.logger.DebugWithChain(intent.DestinationChain, "Failed to update gas price: %s", err.Error())
+	finalGasPrice := chainClient.GetCurrentGasPrice()
+	if finalGasPrice == nil {
+		s.logger.DebugWithChain(intent.DestinationChain, "Fetched gas price is nil")
 		// Continue with default/previous gas price
+	} else if finalGasPrice.Cmp(big.NewInt(0)) <= 0 {
+		s.logger.DebugWithChain(intent.DestinationChain, "Fetched gas price is zero or negative: %s", finalGasPrice.String())
 	} else {
 		// Update metric (convert to gwei for readability)
 		gasPriceGwei := new(big.Float).Quo(
@@ -51,6 +53,7 @@ func (s *Fulfiller) fulfillIntent(ctx context.Context, intent models.Intent) err
 	}
 
 	// convert for BSC unit difference
+	// TODO: use the token decimal attribute to convert amounts correctly
 	if intent.SourceChain == 56 {
 		amount = new(big.Int).Div(amount, big.NewInt(1000000000000))
 	} else if intent.DestinationChain == 56 {

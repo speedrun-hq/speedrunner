@@ -79,6 +79,21 @@ func (s *Fulfiller) filterViableIntents(intents []models.Intent) []models.Intent
 			continue
 		}
 
+		// Check if the current withdraw fee for the chain is below the intent fee
+		currentWithdrawFeeUSD := destinationChainClient.GetWithdrawFeeUSD()
+		feeUSD, err := chains.GetStandardizedAmount(fee, intent.DestinationChain, chains.GetTokenType(intent.Token))
+		if err != nil {
+			s.logger.Debug("Skipping intent %s: Error getting standardized amount for fee %s: %v",
+				intent.ID, fee.String(), err)
+			continue
+		}
+		// we skip for equal as well as an added security measure
+		if currentWithdrawFeeUSD >= feeUSD {
+			s.logger.Debug("Skipping intent %s: Current withdraw fee USD %.2f is greater than or equal to intent fee USD %.2f",
+				intent.ID, currentWithdrawFeeUSD, feeUSD)
+			continue
+		}
+
 		viableIntents = append(viableIntents, intent)
 	}
 	return viableIntents

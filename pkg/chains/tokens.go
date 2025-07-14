@@ -1,8 +1,12 @@
 package chains
 
 import (
-	"github.com/ethereum/go-ethereum/common"
+	"errors"
+	"math"
+	"math/big"
 	"strings"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 // TokenType represents the type of token
@@ -21,6 +25,8 @@ var Tokenlist = []TokenType{
 	TokenTypeUSDT,
 }
 
+// TODO: create a generic structure that lists all tokens and their attributes
+
 // usdcAddresses maps chain IDs to USDC contract addresses
 var usdcAddresses = map[int]string{
 	1:     "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
@@ -32,6 +38,17 @@ var usdcAddresses = map[int]string{
 	8453:  "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
 }
 
+// usdcDecimals maps chain IDs to USDC token decimals
+var usdcDecimals = map[int]int{
+	1:     6,  // Ethereum
+	137:   6,  // Polygon
+	42161: 6,  // Arbitrum
+	43114: 6,  // Avalanche
+	56:    18, // Binance Smart Chain
+	7000:  6,  // ZetaChain
+	8453:  6,  // Base
+}
+
 // usdtAddresses maps chain IDs to USDT contract addresses
 var usdtAddresses = map[int]string{
 	1:     "0xdAC17F958D2ee523a2206206994597C13D831ec7",
@@ -41,6 +58,17 @@ var usdtAddresses = map[int]string{
 	56:    "0x55d398326f99059fF775485246999027B3197955",
 	7000:  "0x7c8dDa80bbBE1254a7aACf3219EBe1481c6E01d7",
 	8453:  "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb",
+}
+
+// usdtDecimals maps chain IDs to USDT token decimals
+var usdtDecimals = map[int]int{
+	1:     6,  // Ethereum
+	137:   6,  // Polygon
+	42161: 6,  // Arbitrum
+	43114: 6,  // Avalanche
+	56:    18, // Binance Smart Chain
+	7000:  6,  // ZetaChain
+	8453:  6,  // Base
 }
 
 func getUSDCAddress(chainID int) string {
@@ -57,6 +85,24 @@ func getUSDTAddress(chainID int) string {
 		return ""
 	}
 	return address
+}
+
+// GetUSDCDecimals returns the number of decimals for USDC on a given chain
+func GetUSDCDecimals(chainID int) int {
+	decimals, exists := usdcDecimals[chainID]
+	if !exists {
+		return 6 // default to 6 decimals if not found
+	}
+	return decimals
+}
+
+// GetUSDTDecimals returns the number of decimals for USDT on a given chain
+func GetUSDTDecimals(chainID int) int {
+	decimals, exists := usdtDecimals[chainID]
+	if !exists {
+		return 6 // default to 6 decimals if not found
+	}
+	return decimals
 }
 
 // GetTokenType returns from the address the name of the token (USDC or USDT)
@@ -99,4 +145,28 @@ func GetTokenEthAddress(chainID int, tokenType TokenType) common.Address {
 		return common.Address{}
 	}
 	return common.HexToAddress(address)
+}
+
+// GetStandardizedAmount returns a float representing the standardized amount for a given token type
+// 1000000 -> 1 USDC for Ethereum
+func GetStandardizedAmount(baseAmount *big.Int, chainID int, tokenType TokenType) (float64, error) {
+	if baseAmount == nil || baseAmount.Sign() <= 0 {
+		return 0, errors.New("invalid base amount")
+	}
+
+	var decimals int
+	switch tokenType {
+	case TokenTypeUSDC:
+		decimals = GetUSDCDecimals(chainID)
+	case TokenTypeUSDT:
+		decimals = GetUSDTDecimals(chainID)
+	default:
+		return 0, errors.New("unsupported token type")
+	}
+
+	// Convert to float64 with appropriate scaling
+	scaledAmount := new(big.Float).Quo(new(big.Float).SetInt(baseAmount), big.NewFloat(math.Pow(10, float64(decimals))))
+
+	result, _ := scaledAmount.Float64()
+	return result, nil
 }
