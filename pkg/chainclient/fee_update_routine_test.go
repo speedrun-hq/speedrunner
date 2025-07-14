@@ -69,7 +69,7 @@ func TestComputeWithdrawFee(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := ComputeWithdrawFee(tt.gasPrice, tt.tokenPriceUSD)
+			result := computeWithdrawFee(tt.gasPrice, tt.tokenPriceUSD)
 
 			// Use approximate comparison for floating point values
 			assert.InDelta(t, tt.expectedFeeUSD, result, 0.0001, tt.description)

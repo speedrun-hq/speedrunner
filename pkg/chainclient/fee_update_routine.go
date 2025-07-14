@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/speedrun-hq/speedrunner/pkg/logger"
 	"io"
 	"math/big"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/speedrun-hq/speedrunner/pkg/logger"
 )
 
 // FeeUpdateRoutine manages the periodic updates of gas price, token price, and withdraw fee
@@ -122,6 +123,9 @@ func (r *FeeUpdateRoutine) updatePrices() error {
 	// Log the updated values
 	r.logger.InfoWithChain(r.client.ChainID,
 		"Updated gas price: %s, Token price: $%.2f, Withdraw fee: $%.2f",
+		gasPrice.String(),
+		tokenPrice,
+		withdrawFee,
 	)
 
 	// TODO: Implement metrics updates
@@ -136,14 +140,21 @@ func getTokenPriceUSD(ctx context.Context, chainID int) (float64, error) {
 		1:     "ethereum",      // Ethereum
 		137:   "matic-network", // Polygon
 		42161: "ethereum",      // Arbitrum (uses ETH)
-		10:    "ethereum",      // Optimism (uses ETH)
+		8453:  "ethereum",      // Base (uses ETH)
 		56:    "binancecoin",   // BSC
 		43114: "avalanche-2",   // Avalanche
+		7000:  "zetachain",     // ZetaChain
 	}
 
 	tokenID, exists := tokenIDs[chainID]
 	if !exists {
 		return 0, fmt.Errorf("unsupported chain ID for price fetching: %d", chainID)
+	}
+
+	// Check cache first
+	cache := getOrCreateCache()
+	if cachedPrice, found := cache.Get(tokenID); found {
+		return cachedPrice, nil
 	}
 
 	// Fetch price from CoinGecko API
@@ -192,6 +203,9 @@ func getTokenPriceUSD(ctx context.Context, chainID int) (float64, error) {
 	if !exists {
 		return 0, fmt.Errorf("USD price not found in response")
 	}
+
+	// Cache the price for future use
+	cache.Set(tokenID, price)
 
 	return price, nil
 }
