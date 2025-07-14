@@ -3,9 +3,11 @@ package chainclient
 import (
 	"context"
 	"fmt"
+	"github.com/speedrun-hq/speedrunner/pkg/logger"
 	"math/big"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -17,6 +19,7 @@ import (
 
 // Client contains client and config information for a specific blockchain
 type Client struct {
+	Ctx            context.Context
 	ChainID        int
 	RPCURL         string
 	IntentAddress  string
@@ -26,18 +29,34 @@ type Client struct {
 	IntentContract *contracts.Intent
 	Auth           *bind.TransactOpts
 	GasMultiplier  float64
+
+	// updated fees
+	CurrentGasPrice *big.Int
+	TokenPriceUSD   float64
+	WithdrawFeeUSD  float64
+
+	logger     logger.Logger
+	mu         sync.RWMutex
+	feeRoutine *FeeUpdateRoutine
 }
 
 // New creates a new client
 // TODO: should return error for invalid values to avoid unexpected behavior
-func New(chainID int, rpcURL string, intentAddress string, minFee string) *Client {
+func New(
+	ctx context.Context,
+	chainID int,
+	rpcURL,
+	intentAddress,
+	minFee,
+	privateKey string,
+	logger logger.Logger,
+) (*Client, error) {
 	minFeeBig := big.NewInt(0)
 	if minFee != "" {
 		var success bool
 		minFeeBig, success = new(big.Int).SetString(minFee, 10)
 		if !success {
-			// TODO: return error here
-			minFeeBig = big.NewInt(0)
+			return nil, fmt.Errorf("invalid minFee value: %s", minFee)
 		}
 	}
 
@@ -51,41 +70,44 @@ func New(chainID int, rpcURL string, intentAddress string, minFee string) *Clien
 		}
 	}
 
-	return &Client{
+	// Connect to the chain using the provided RPC URL
+	client := &Client{
+		Ctx:           ctx,
 		ChainID:       chainID,
 		RPCURL:        rpcURL,
 		IntentAddress: intentAddress,
 		MinFee:        minFeeBig,
 		GasMultiplier: gasMultiplier,
+		logger:        logger,
+		feeRoutine:    nil,
 	}
+	if err := client.connect(ctx, privateKey); err != nil {
+		return nil, fmt.Errorf("failed to connect to chain %d: %v", chainID, err)
+	}
+
+	// start fee update routine
+	client.StartFeeUpdateRoutine(15 * time.Second)
+
+	return client, nil
 }
 
-// Connect establishes connections to blockchain RPC and initializes contract instances
-func (c *Client) Connect(ctx context.Context, privateKey string) error {
-	// Connect to Ethereum client
-	client, err := ethclient.Dial(c.RPCURL)
-	if err != nil {
-		return fmt.Errorf("failed to connect to client: %v", err)
-	}
-	c.Client = client
-
-	// Set up authenticator and contract binding
-	if privateKey != "" {
-		auth, err := createAuthenticator(ctx, client, privateKey)
-		if err != nil {
-			return fmt.Errorf("failed to create authenticator: %v", err)
-		}
-		c.Auth = auth
+// StartFeeUpdateRoutine starts a goroutine that periodically updates gas price, token price, and withdraw fee
+func (c *Client) StartFeeUpdateRoutine(interval time.Duration) {
+	if c.feeRoutine != nil && c.feeRoutine.IsRunning() {
+		// Already running
+		return
 	}
 
-	// Initialize contract binding
-	contract, err := contracts.NewIntent(common.HexToAddress(c.IntentAddress), client)
-	if err != nil {
-		return fmt.Errorf("failed to initialize contract: %v", err)
-	}
-	c.IntentContract = contract
+	c.feeRoutine = NewFeeUpdateRoutine(c, interval)
+	c.feeRoutine.Start()
+}
 
-	return nil
+// StopFeeUpdateRoutine stops the periodic updates goroutine
+func (c *Client) StopFeeUpdateRoutine() {
+	if c.feeRoutine != nil {
+		c.feeRoutine.Stop()
+		c.feeRoutine = nil
+	}
 }
 
 // UpdateGasPrice updates the gas price based on current network conditions
@@ -128,6 +150,55 @@ func (c *Client) GetLatestBlockNumber(ctx context.Context) (uint64, error) {
 	}
 
 	return c.Client.BlockNumber(ctx)
+}
+
+// GetCurrentGasPrice returns the current gas price
+func (c *Client) GetCurrentGasPrice() *big.Int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.CurrentGasPrice
+}
+
+// GetStoredTokenPriceUSD returns the current token price in USD
+func (c *Client) GetStoredTokenPriceUSD() float64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.TokenPriceUSD
+}
+
+// GetWithdrawFeeUSD returns the current withdraw fee in USD
+func (c *Client) GetWithdrawFeeUSD() float64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.WithdrawFeeUSD
+}
+
+// connect establishes connections to blockchain RPC and initializes contract instances
+func (c *Client) connect(ctx context.Context, privateKey string) error {
+	// Connect to Ethereum client
+	client, err := ethclient.Dial(c.RPCURL)
+	if err != nil {
+		return fmt.Errorf("failed to connect to client: %v", err)
+	}
+	c.Client = client
+
+	// Set up authenticator and contract binding
+	if privateKey != "" {
+		auth, err := createAuthenticator(ctx, client, privateKey)
+		if err != nil {
+			return fmt.Errorf("failed to create authenticator: %v", err)
+		}
+		c.Auth = auth
+	}
+
+	// Initialize contract binding
+	contract, err := contracts.NewIntent(common.HexToAddress(c.IntentAddress), client)
+	if err != nil {
+		return fmt.Errorf("failed to initialize contract: %v", err)
+	}
+	c.IntentContract = contract
+
+	return nil
 }
 
 // Helper function to create authenticator

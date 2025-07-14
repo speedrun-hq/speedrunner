@@ -16,9 +16,9 @@ import (
 )
 
 // fulfillIntent attempts to fulfill a single intent
-func (s *Service) fulfillIntent(ctx context.Context, intent models.Intent) error {
+func (s *Fulfiller) fulfillIntent(ctx context.Context, intent models.Intent) error {
 	s.mu.Lock()
-	chainConfig, exists := s.config.Chains[intent.DestinationChain]
+	chainClient, exists := s.chainClients[intent.DestinationChain]
 	s.mu.Unlock()
 
 	if !exists {
@@ -26,10 +26,12 @@ func (s *Service) fulfillIntent(ctx context.Context, intent models.Intent) error
 	}
 
 	// Update gas price before transaction
-	finalGasPrice, err := chainConfig.UpdateGasPrice(ctx)
-	if err != nil {
-		s.logger.DebugWithChain(intent.DestinationChain, "Failed to update gas price: %s", err.Error())
+	finalGasPrice := chainClient.GetCurrentGasPrice()
+	if finalGasPrice == nil {
+		s.logger.DebugWithChain(intent.DestinationChain, "Fetched gas price is nil")
 		// Continue with default/previous gas price
+	} else if finalGasPrice.Cmp(big.NewInt(0)) <= 0 {
+		s.logger.DebugWithChain(intent.DestinationChain, "Fetched gas price is zero or negative: %s", finalGasPrice.String())
 	} else {
 		// Update metric (convert to gwei for readability)
 		gasPriceGwei := new(big.Float).Quo(
@@ -51,6 +53,7 @@ func (s *Service) fulfillIntent(ctx context.Context, intent models.Intent) error
 	}
 
 	// convert for BSC unit difference
+	// TODO: use the token decimal attribute to convert amounts correctly
 	if intent.SourceChain == 56 {
 		amount = new(big.Int).Div(amount, big.NewInt(1000000000000))
 	} else if intent.DestinationChain == 56 {
@@ -63,7 +66,7 @@ func (s *Service) fulfillIntent(ctx context.Context, intent models.Intent) error
 	receiver := common.HexToAddress(intent.Recipient)
 
 	// Get the Intent contract address
-	intentAddress := common.HexToAddress(chainConfig.IntentAddress)
+	intentAddress := common.HexToAddress(chainClient.IntentAddress)
 
 	// Get the token type from token address
 	tokenType := chains.GetTokenType(intent.Token)
@@ -91,14 +94,14 @@ func (s *Service) fulfillIntent(ctx context.Context, intent models.Intent) error
 	erc20Contract := bind.NewBoundContract(
 		tokenAddress,
 		erc20ABI,
-		chainConfig.Client,
-		chainConfig.Client,
-		chainConfig.Client,
+		chainClient.Client,
+		chainClient.Client,
+		chainClient.Client,
 	)
 
 	// Apply current gas price to transactor
 	s.mu.Lock()
-	txOpts := *chainConfig.Auth
+	txOpts := *chainClient.Auth
 	s.mu.Unlock()
 
 	// Check if approval is needed
@@ -148,7 +151,7 @@ func (s *Service) fulfillIntent(ctx context.Context, intent models.Intent) error
 		s.logger.InfoWithChain(intent.DestinationChain, "Approval transaction sent for intent %s: %s", intent.ID, approveTx.Hash().Hex())
 
 		// Wait for the approve transaction to be mined
-		approveReceipt, err := bind.WaitMined(ctx, chainConfig.Client, approveTx)
+		approveReceipt, err := bind.WaitMined(ctx, chainClient.Client, approveTx)
 		if err != nil {
 			s.logger.ErrorWithChain(intent.DestinationChain, "Failed to mine approval transaction for intent %s: %v", intent.ID, err)
 			return fmt.Errorf("failed to wait for approve transaction: %v", err)
@@ -167,7 +170,7 @@ func (s *Service) fulfillIntent(ctx context.Context, intent models.Intent) error
 	s.logger.NoticeWithChain(intent.DestinationChain, "Initiating fulfillment for intent %s (token: %s, amount: %s, receiver: %s)",
 		intent.ID, tokenAddress.Hex(), amount.String(), receiver.Hex())
 
-	tx, err := chainConfig.IntentContract.Fulfill(&txOpts, intentID, tokenAddress, amount, receiver)
+	tx, err := chainClient.IntentContract.Fulfill(&txOpts, intentID, tokenAddress, amount, receiver)
 	if err != nil {
 		s.logger.ErrorWithChain(intent.DestinationChain, "Failed to create fulfillment transaction for intent %s: %v", intent.ID, err)
 		return fmt.Errorf("failed to fulfill intent on %d: %v", intent.DestinationChain, err)
@@ -176,7 +179,7 @@ func (s *Service) fulfillIntent(ctx context.Context, intent models.Intent) error
 	s.logger.InfoWithChain(intent.DestinationChain, "Fulfillment transaction created for intent %s: %s", intent.ID, tx.Hash().Hex())
 
 	// Wait for the transaction to be mined
-	receipt, err := bind.WaitMined(ctx, chainConfig.Client, tx)
+	receipt, err := bind.WaitMined(ctx, chainClient.Client, tx)
 	if err != nil {
 		s.logger.ErrorWithChain(intent.DestinationChain, "Failed to wait for transaction on intent %s: %v", intent.ID, err)
 		return fmt.Errorf("failed to wait for transaction on %d: %v", intent.DestinationChain, err)

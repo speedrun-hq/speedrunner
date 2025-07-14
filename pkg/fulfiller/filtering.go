@@ -10,7 +10,7 @@ import (
 )
 
 // filterViableIntents filters intents that are viable for fulfillment
-func (s *Service) filterViableIntents(intents []models.Intent) []models.Intent {
+func (s *Fulfiller) filterViableIntents(intents []models.Intent) []models.Intent {
 	var viableIntents []models.Intent
 	for _, intent := range intents {
 		// Check circuit breaker status
@@ -56,7 +56,7 @@ func (s *Service) filterViableIntents(intents []models.Intent) []models.Intent {
 
 		// Check if fee meets minimum requirement for the chain
 		s.mu.Lock()
-		destinationChainConfig, destinationExists := s.config.Chains[intent.DestinationChain]
+		destinationChainClient, destinationExists := s.chainClients[intent.DestinationChain]
 		s.mu.Unlock()
 
 		if !destinationExists {
@@ -73,9 +73,24 @@ func (s *Service) filterViableIntents(intents []models.Intent) []models.Intent {
 		}
 
 		// Check if fee meets minimum requirement for the chain
-		if destinationChainConfig.MinFee != nil && fee.Cmp(destinationChainConfig.MinFee) < 0 {
+		if destinationChainClient.MinFee != nil && fee.Cmp(destinationChainClient.MinFee) < 0 {
 			s.logger.Debug("Skipping intent %s: Fee %s below minimum %s for chain %d",
-				intent.ID, fee.String(), destinationChainConfig.MinFee.String(), intent.DestinationChain)
+				intent.ID, fee.String(), destinationChainClient.MinFee.String(), intent.DestinationChain)
+			continue
+		}
+
+		// Check if the current withdraw fee for the chain is below the intent fee
+		currentWithdrawFeeUSD := destinationChainClient.GetWithdrawFeeUSD()
+		feeUSD, err := chains.GetStandardizedAmount(fee, intent.DestinationChain, chains.GetTokenType(intent.Token))
+		if err != nil {
+			s.logger.Debug("Skipping intent %s: Error getting standardized amount for fee %s: %v",
+				intent.ID, fee.String(), err)
+			continue
+		}
+		// we skip for equal as well as an added security measure
+		if currentWithdrawFeeUSD >= feeUSD {
+			s.logger.Debug("Skipping intent %s: Current withdraw fee USD %.2f is greater than or equal to intent fee USD %.2f",
+				intent.ID, currentWithdrawFeeUSD, feeUSD)
 			continue
 		}
 
@@ -85,7 +100,7 @@ func (s *Service) filterViableIntents(intents []models.Intent) []models.Intent {
 }
 
 // hasSufficientBalance checks if we have sufficient token balance for the intent
-func (s *Service) hasSufficientBalance(intent models.Intent) bool {
+func (s *Fulfiller) hasSufficientBalance(intent models.Intent) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

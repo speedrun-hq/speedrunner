@@ -23,7 +23,7 @@ func main() {
 	defer cancel()
 
 	// Create the fulfiller service
-	service, err := fulfiller.NewService(ctx, cfg)
+	service, err := fulfiller.NewFulfiller(ctx, cfg)
 	if err != nil {
 		log.Fatalf("Failed to create fulfiller service: %v", err)
 	}

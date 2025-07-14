@@ -13,7 +13,7 @@ import (
 )
 
 // startMetricsUpdater starts a goroutine to update metrics periodically
-func (s *Service) startMetricsUpdater(ctx context.Context) {
+func (s *Fulfiller) startMetricsUpdater(ctx context.Context) {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
@@ -28,7 +28,7 @@ func (s *Service) startMetricsUpdater(ctx context.Context) {
 }
 
 // updateMetrics updates Prometheus metrics
-func (s *Service) updateMetrics(ctx context.Context) {
+func (s *Fulfiller) updateMetrics(ctx context.Context) {
 	s.logger.Debug("Starting metrics update...")
 
 	// Update token balance metrics
@@ -51,7 +51,7 @@ func (s *Service) updateMetrics(ctx context.Context) {
 			}
 
 			// Get token decimals for logging
-			token, err := contracts.NewERC20(tokenAddress, s.config.Chains[chainID].Client)
+			token, err := contracts.NewERC20(tokenAddress, s.chainClients[chainID].Client)
 			if err != nil {
 				s.logger.DebugWithChain(chainID, "Error creating token contract for %s: %v", tokenType, err)
 				continue
@@ -75,7 +75,7 @@ func (s *Service) updateMetrics(ctx context.Context) {
 	}
 
 	// Update gas price metrics
-	for chainID, chainConfig := range s.config.Chains {
+	for chainID, chainConfig := range s.chainClients {
 		chainName := chains.GetChainName(chainID)
 		if chainName == "" {
 			chainName = "Unknown"
