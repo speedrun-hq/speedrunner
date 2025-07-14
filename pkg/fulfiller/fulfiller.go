@@ -44,6 +44,7 @@ func NewFulfiller(ctx context.Context, cfg *config.Config) (*Fulfiller, error) {
 			chainConfig.IntentAddress,
 			chainConfig.MinFee,
 			cfg.PrivateKey,
+			stdLogger,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create chain client for chain %d: %v", chainConfig.ChainID, err)

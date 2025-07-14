@@ -3,9 +3,11 @@ package chainclient
 import (
 	"context"
 	"fmt"
+	"github.com/speedrun-hq/speedrunner/pkg/logger"
 	"math/big"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -27,11 +29,28 @@ type Client struct {
 	IntentContract *contracts.Intent
 	Auth           *bind.TransactOpts
 	GasMultiplier  float64
+
+	// updated fees
+	CurrentGasPrice *big.Int
+	TokenPriceUSD   float64
+	WithdrawFeeUSD  float64
+
+	logger     logger.Logger
+	mu         sync.RWMutex
+	feeRoutine *FeeUpdateRoutine
 }
 
 // New creates a new client
 // TODO: should return error for invalid values to avoid unexpected behavior
-func New(ctx context.Context, chainID int, rpcURL string, intentAddress string, minFee string, privateKey string) (*Client, error) {
+func New(
+	ctx context.Context,
+	chainID int,
+	rpcURL,
+	intentAddress,
+	minFee,
+	privateKey string,
+	logger logger.Logger,
+) (*Client, error) {
 	minFeeBig := big.NewInt(0)
 	if minFee != "" {
 		var success bool
@@ -59,12 +78,33 @@ func New(ctx context.Context, chainID int, rpcURL string, intentAddress string, 
 		IntentAddress: intentAddress,
 		MinFee:        minFeeBig,
 		GasMultiplier: gasMultiplier,
+		logger:        logger,
+		feeRoutine:    nil,
 	}
 	if err := client.connect(ctx, privateKey); err != nil {
 		return nil, fmt.Errorf("failed to connect to chain %d: %v", chainID, err)
 	}
 
 	return client, nil
+}
+
+// StartFeeUpdateRoutine starts a goroutine that periodically updates gas price, token price, and withdraw fee
+func (c *Client) StartFeeUpdateRoutine(interval time.Duration) {
+	if c.feeRoutine != nil && c.feeRoutine.IsRunning() {
+		// Already running
+		return
+	}
+
+	c.feeRoutine = NewFeeUpdateRoutine(c, interval)
+	c.feeRoutine.Start()
+}
+
+// StopFeeUpdateRoutine stops the periodic updates goroutine
+func (c *Client) StopFeeUpdateRoutine() {
+	if c.feeRoutine != nil {
+		c.feeRoutine.Stop()
+		c.feeRoutine = nil
+	}
 }
 
 // UpdateGasPrice updates the gas price based on current network conditions
@@ -107,6 +147,27 @@ func (c *Client) GetLatestBlockNumber(ctx context.Context) (uint64, error) {
 	}
 
 	return c.Client.BlockNumber(ctx)
+}
+
+// GetCurrentGasPrice returns the current gas price
+func (c *Client) GetCurrentGasPrice() *big.Int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.CurrentGasPrice
+}
+
+// GetStoredTokenPriceUSD returns the current token price in USD
+func (c *Client) GetStoredTokenPriceUSD() float64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.TokenPriceUSD
+}
+
+// GetWithdrawFeeUSD returns the current withdraw fee in USD
+func (c *Client) GetWithdrawFeeUSD() float64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.WithdrawFeeUSD
 }
 
 // connect establishes connections to blockchain RPC and initializes contract instances
