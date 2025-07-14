@@ -13,7 +13,7 @@ import (
 )
 
 // worker processes intents from the job queue
-func (s *Service) worker(ctx context.Context, id int) {
+func (s *Fulfiller) worker(ctx context.Context, id int) {
 	s.logger.Info("Starting worker %d", id)
 	for {
 		select {

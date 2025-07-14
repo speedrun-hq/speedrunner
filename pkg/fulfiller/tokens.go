@@ -9,7 +9,7 @@ import (
 )
 
 // getTokenBalance gets the token balance for a given chain and token address
-func (s *Service) getTokenBalance(chainID int, tokenAddress common.Address) (*big.Float, error) {
+func (s *Fulfiller) getTokenBalance(chainID int, tokenAddress common.Address) (*big.Float, error) {
 	chainClient, exists := s.chainClients[chainID]
 	if !exists {
 		return nil, fmt.Errorf("chain client not found for chain %d", chainID)

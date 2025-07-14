@@ -16,8 +16,8 @@ import (
 	"github.com/speedrun-hq/speedrunner/pkg/srunclient"
 )
 
-// Service handles the intent fulfillment process
-type Service struct {
+// Fulfiller handles the intent fulfillment process
+type Fulfiller struct {
 	config          *config.Config
 	srunClient      *srunclient.Client
 	mu              sync.Mutex
@@ -30,8 +30,8 @@ type Service struct {
 	logger          logger.Logger
 }
 
-// NewService creates a new fulfiller service
-func NewService(ctx context.Context, cfg *config.Config) (*Service, error) {
+// NewFulfiller creates a new fulfiller service
+func NewFulfiller(ctx context.Context, cfg *config.Config) (*Fulfiller, error) {
 	stdLogger := logger.NewStdLogger(cfg.LoggerConfig.Coloring, cfg.LoggerConfig.Level)
 
 	// Connect to blockchain clients
@@ -64,7 +64,7 @@ func NewService(ctx context.Context, cfg *config.Config) (*Service, error) {
 		)
 	}
 
-	return &Service{
+	return &Fulfiller{
 		config:          cfg,
 		srunClient:      srunclient.New(cfg.APIEndpoint, stdLogger),
 		workers:         cfg.WorkerCount,
@@ -77,7 +77,7 @@ func NewService(ctx context.Context, cfg *config.Config) (*Service, error) {
 }
 
 // Start begins the fulfiller service
-func (s *Service) Start(ctx context.Context) {
+func (s *Fulfiller) Start(ctx context.Context) {
 	// Start health monitoring server
 	healthServer := health.NewServer(
 		s.config.MetricsPort,
@@ -99,7 +99,7 @@ func (s *Service) Start(ctx context.Context) {
 	// Start metrics updater
 	go s.startMetricsUpdater(ctx)
 
-	s.logger.Info("Starting Fulfiller Service with polling interval %v", s.config.PollingInterval)
+	s.logger.Info("Starting Fulfiller Fulfiller with polling interval %v", s.config.PollingInterval)
 	ticker := time.NewTicker(s.config.PollingInterval)
 	defer ticker.Stop()
 
@@ -135,7 +135,7 @@ func (s *Service) Start(ctx context.Context) {
 }
 
 // retryHandler handles retrying failed jobs with exponential backoff
-func (s *Service) retryHandler(ctx context.Context) {
+func (s *Fulfiller) retryHandler(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
@@ -150,7 +150,7 @@ func (s *Service) retryHandler(ctx context.Context) {
 }
 
 // processRetryJobs processes jobs in the retry queue
-func (s *Service) processRetryJobs(ctx context.Context) {
+func (s *Fulfiller) processRetryJobs(ctx context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -212,7 +212,7 @@ func (s *Service) processRetryJobs(ctx context.Context) {
 }
 
 // isGasPriceAcceptable checks if the current gas price is acceptable for the chain
-func (s *Service) isGasPriceAcceptable(ctx context.Context, chainID int) bool {
+func (s *Fulfiller) isGasPriceAcceptable(ctx context.Context, chainID int) bool {
 	chainClient, exists := s.chainClients[chainID]
 	if !exists {
 		return false

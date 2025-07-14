@@ -16,7 +16,7 @@ import (
 )
 
 // fulfillIntent attempts to fulfill a single intent
-func (s *Service) fulfillIntent(ctx context.Context, intent models.Intent) error {
+func (s *Fulfiller) fulfillIntent(ctx context.Context, intent models.Intent) error {
 	s.mu.Lock()
 	chainClient, exists := s.chainClients[intent.DestinationChain]
 	s.mu.Unlock()

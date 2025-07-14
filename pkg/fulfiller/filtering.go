@@ -10,7 +10,7 @@ import (
 )
 
 // filterViableIntents filters intents that are viable for fulfillment
-func (s *Service) filterViableIntents(intents []models.Intent) []models.Intent {
+func (s *Fulfiller) filterViableIntents(intents []models.Intent) []models.Intent {
 	var viableIntents []models.Intent
 	for _, intent := range intents {
 		// Check circuit breaker status
@@ -85,7 +85,7 @@ func (s *Service) filterViableIntents(intents []models.Intent) []models.Intent {
 }
 
 // hasSufficientBalance checks if we have sufficient token balance for the intent
-func (s *Service) hasSufficientBalance(intent models.Intent) bool {
+func (s *Fulfiller) hasSufficientBalance(intent models.Intent) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

@@ -13,7 +13,7 @@ import (
 )
 
 // startMetricsUpdater starts a goroutine to update metrics periodically
-func (s *Service) startMetricsUpdater(ctx context.Context) {
+func (s *Fulfiller) startMetricsUpdater(ctx context.Context) {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
@@ -28,7 +28,7 @@ func (s *Service) startMetricsUpdater(ctx context.Context) {
 }
 
 // updateMetrics updates Prometheus metrics
-func (s *Service) updateMetrics(ctx context.Context) {
+func (s *Fulfiller) updateMetrics(ctx context.Context) {
 	s.logger.Debug("Starting metrics update...")
 
 	// Update token balance metrics

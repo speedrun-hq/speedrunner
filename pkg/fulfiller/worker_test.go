@@ -97,7 +97,7 @@ func worker(ctx context.Context, queue JobQueue, fulfillFunc FulfillFunc) {
 	}
 }
 
-// MockService is a simplified test double for the Service
+// MockService is a simplified test double for the Fulfiller
 type MockService struct {
 	mu               sync.Mutex
 	fulfilledIntents []models.Intent
