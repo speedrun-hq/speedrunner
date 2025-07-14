@@ -17,6 +17,7 @@ import (
 
 // Client contains client and config information for a specific blockchain
 type Client struct {
+	Ctx            context.Context
 	ChainID        int
 	RPCURL         string
 	IntentAddress  string
@@ -30,14 +31,13 @@ type Client struct {
 
 // New creates a new client
 // TODO: should return error for invalid values to avoid unexpected behavior
-func New(chainID int, rpcURL string, intentAddress string, minFee string) *Client {
+func New(ctx context.Context, chainID int, rpcURL string, intentAddress string, minFee string, privateKey string) (*Client, error) {
 	minFeeBig := big.NewInt(0)
 	if minFee != "" {
 		var success bool
 		minFeeBig, success = new(big.Int).SetString(minFee, 10)
 		if !success {
-			// TODO: return error here
-			minFeeBig = big.NewInt(0)
+			return nil, fmt.Errorf("invalid minFee value: %s", minFee)
 		}
 	}
 
@@ -51,41 +51,20 @@ func New(chainID int, rpcURL string, intentAddress string, minFee string) *Clien
 		}
 	}
 
-	return &Client{
+	// Connect to the chain using the provided RPC URL
+	client := &Client{
+		Ctx:           ctx,
 		ChainID:       chainID,
 		RPCURL:        rpcURL,
 		IntentAddress: intentAddress,
 		MinFee:        minFeeBig,
 		GasMultiplier: gasMultiplier,
 	}
-}
-
-// Connect establishes connections to blockchain RPC and initializes contract instances
-func (c *Client) Connect(ctx context.Context, privateKey string) error {
-	// Connect to Ethereum client
-	client, err := ethclient.Dial(c.RPCURL)
-	if err != nil {
-		return fmt.Errorf("failed to connect to client: %v", err)
-	}
-	c.Client = client
-
-	// Set up authenticator and contract binding
-	if privateKey != "" {
-		auth, err := createAuthenticator(ctx, client, privateKey)
-		if err != nil {
-			return fmt.Errorf("failed to create authenticator: %v", err)
-		}
-		c.Auth = auth
+	if err := client.connect(ctx, privateKey); err != nil {
+		return nil, fmt.Errorf("failed to connect to chain %d: %v", chainID, err)
 	}
 
-	// Initialize contract binding
-	contract, err := contracts.NewIntent(common.HexToAddress(c.IntentAddress), client)
-	if err != nil {
-		return fmt.Errorf("failed to initialize contract: %v", err)
-	}
-	c.IntentContract = contract
-
-	return nil
+	return client, nil
 }
 
 // UpdateGasPrice updates the gas price based on current network conditions
@@ -128,6 +107,34 @@ func (c *Client) GetLatestBlockNumber(ctx context.Context) (uint64, error) {
 	}
 
 	return c.Client.BlockNumber(ctx)
+}
+
+// connect establishes connections to blockchain RPC and initializes contract instances
+func (c *Client) connect(ctx context.Context, privateKey string) error {
+	// Connect to Ethereum client
+	client, err := ethclient.Dial(c.RPCURL)
+	if err != nil {
+		return fmt.Errorf("failed to connect to client: %v", err)
+	}
+	c.Client = client
+
+	// Set up authenticator and contract binding
+	if privateKey != "" {
+		auth, err := createAuthenticator(ctx, client, privateKey)
+		if err != nil {
+			return fmt.Errorf("failed to create authenticator: %v", err)
+		}
+		c.Auth = auth
+	}
+
+	// Initialize contract binding
+	contract, err := contracts.NewIntent(common.HexToAddress(c.IntentAddress), client)
+	if err != nil {
+		return fmt.Errorf("failed to initialize contract: %v", err)
+	}
+	c.IntentContract = contract
+
+	return nil
 }
 
 // Helper function to create authenticator

@@ -22,6 +22,17 @@ var chainNames = map[int]string{
 	8453:  "BASE",
 }
 
+// withdrawDefaultGasLimit is the default gas limit for withdrawal transactions per chains
+var withdrawDefaultGasLimit = map[int]uint64{
+	1:     400000,  // Ethereum
+	137:   400000,  // Polygon
+	42161: 1000000, // Arbitrum
+	43114: 400000,  // Avalanche
+	56:    400000,  // Binance Smart Chain
+	7000:  400000,  // ZetaChain
+	8453:  400000,  // Base
+}
+
 // GetChainName returns the name of the chain for a given chain ID
 func GetChainName(chainID int) string {
 	name, exists := chainNames[chainID]

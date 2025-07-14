@@ -51,7 +51,7 @@ func (s *Service) updateMetrics(ctx context.Context) {
 			}
 
 			// Get token decimals for logging
-			token, err := contracts.NewERC20(tokenAddress, s.config.Chains[chainID].Client)
+			token, err := contracts.NewERC20(tokenAddress, s.chainClients[chainID].Client)
 			if err != nil {
 				s.logger.DebugWithChain(chainID, "Error creating token contract for %s: %v", tokenType, err)
 				continue
@@ -75,7 +75,7 @@ func (s *Service) updateMetrics(ctx context.Context) {
 	}
 
 	// Update gas price metrics
-	for chainID, chainConfig := range s.config.Chains {
+	for chainID, chainConfig := range s.chainClients {
 		chainName := chains.GetChainName(chainID)
 		if chainName == "" {
 			chainName = "Unknown"

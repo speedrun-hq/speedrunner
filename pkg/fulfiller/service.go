@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/speedrun-hq/speedrunner/pkg/chainclient"
 	"github.com/speedrun-hq/speedrunner/pkg/circuitbreaker"
 	"github.com/speedrun-hq/speedrunner/pkg/config"
 	"github.com/speedrun-hq/speedrunner/pkg/health"
@@ -24,6 +25,7 @@ type Service struct {
 	pendingJobs     chan models.Intent
 	retryJobs       chan models.RetryJob
 	wg              sync.WaitGroup
+	chainClients    map[int]*chainclient.Client
 	circuitBreakers map[int]*circuitbreaker.CircuitBreaker
 	logger          logger.Logger
 }
@@ -33,10 +35,21 @@ func NewService(ctx context.Context, cfg *config.Config) (*Service, error) {
 	stdLogger := logger.NewStdLogger(cfg.LoggerConfig.Coloring, cfg.LoggerConfig.Level)
 
 	// Connect to blockchain clients
+	chainClients := make(map[int]*chainclient.Client)
 	for _, chainConfig := range cfg.Chains {
-		if err := chainConfig.Connect(ctx, cfg.PrivateKey); err != nil {
-			return nil, fmt.Errorf("failed to connect to chain %d: %v", chainConfig.ChainID, err)
+		chainClient, err := chainclient.New(
+			ctx,
+			chainConfig.ChainID,
+			chainConfig.RPCURL,
+			chainConfig.IntentAddress,
+			chainConfig.MinFee,
+			cfg.PrivateKey,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create chain client for chain %d: %v", chainConfig.ChainID, err)
 		}
+
+		chainClients[chainConfig.ChainID] = chainClient
 	}
 
 	// Initialize circuit breakers
@@ -57,6 +70,7 @@ func NewService(ctx context.Context, cfg *config.Config) (*Service, error) {
 		workers:         cfg.WorkerCount,
 		pendingJobs:     make(chan models.Intent, 100),   // Buffer for pending intents
 		retryJobs:       make(chan models.RetryJob, 100), // Buffer for retry jobs
+		chainClients:    chainClients,
 		circuitBreakers: circuitBreakers,
 		logger:          stdLogger,
 	}, nil
@@ -67,7 +81,7 @@ func (s *Service) Start(ctx context.Context) {
 	// Start health monitoring server
 	healthServer := health.NewServer(
 		s.config.MetricsPort,
-		s.config.Chains,
+		s.chainClients,
 		s.circuitBreakers,
 		s.logger,
 	)
@@ -199,13 +213,13 @@ func (s *Service) processRetryJobs(ctx context.Context) {
 
 // isGasPriceAcceptable checks if the current gas price is acceptable for the chain
 func (s *Service) isGasPriceAcceptable(ctx context.Context, chainID int) bool {
-	chainConfig, exists := s.config.Chains[chainID]
+	chainClient, exists := s.chainClients[chainID]
 	if !exists {
 		return false
 	}
 
 	// Get current gas price
-	gasPrice, err := chainConfig.Client.SuggestGasPrice(ctx)
+	gasPrice, err := chainClient.Client.SuggestGasPrice(ctx)
 	if err != nil {
 
 		s.logger.ErrorWithChain(chainID, "Error getting gas price: %v", err)
@@ -213,8 +227,8 @@ func (s *Service) isGasPriceAcceptable(ctx context.Context, chainID int) bool {
 	}
 
 	// Check if gas price is within acceptable range
-	if chainConfig.MaxGasPrice != nil && gasPrice.Cmp(chainConfig.MaxGasPrice) > 0 {
-		s.logger.ErrorWithChain(chainID, "Gas price too high: %s > %s", gasPrice.String(), chainConfig.MaxGasPrice.String())
+	if chainClient.MaxGasPrice != nil && gasPrice.Cmp(chainClient.MaxGasPrice) > 0 {
+		s.logger.ErrorWithChain(chainID, "Gas price too high: %s > %s", gasPrice.String(), chainClient.MaxGasPrice.String())
 		return false
 	}
 

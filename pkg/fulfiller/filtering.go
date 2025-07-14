@@ -56,7 +56,7 @@ func (s *Service) filterViableIntents(intents []models.Intent) []models.Intent {
 
 		// Check if fee meets minimum requirement for the chain
 		s.mu.Lock()
-		destinationChainConfig, destinationExists := s.config.Chains[intent.DestinationChain]
+		destinationChainClient, destinationExists := s.chainClients[intent.DestinationChain]
 		s.mu.Unlock()
 
 		if !destinationExists {
@@ -73,9 +73,9 @@ func (s *Service) filterViableIntents(intents []models.Intent) []models.Intent {
 		}
 
 		// Check if fee meets minimum requirement for the chain
-		if destinationChainConfig.MinFee != nil && fee.Cmp(destinationChainConfig.MinFee) < 0 {
+		if destinationChainClient.MinFee != nil && fee.Cmp(destinationChainClient.MinFee) < 0 {
 			s.logger.Debug("Skipping intent %s: Fee %s below minimum %s for chain %d",
-				intent.ID, fee.String(), destinationChainConfig.MinFee.String(), intent.DestinationChain)
+				intent.ID, fee.String(), destinationChainClient.MinFee.String(), intent.DestinationChain)
 			continue
 		}
 

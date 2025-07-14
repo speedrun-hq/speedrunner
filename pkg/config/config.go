@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
-	"github.com/speedrun-hq/speedrunner/pkg/chainclient"
 	"github.com/speedrun-hq/speedrunner/pkg/logger"
 )
 
@@ -18,7 +17,7 @@ type Config struct {
 	PollingInterval  time.Duration
 	FulfillerAddress string
 	PrivateKey       string
-	Chains           map[int]*chainclient.Client
+	Chains           map[int]ChainConfig
 	WorkerCount      int
 	MetricsPort      string
 	CircuitBreaker   CircuitBreakerConfig
@@ -39,6 +38,14 @@ type CircuitBreakerConfig struct {
 type LoggerConfig struct {
 	Level    logger.Level
 	Coloring bool
+}
+
+// ChainConfig holds the configuration for a specific blockchain
+type ChainConfig struct {
+	ChainID       int
+	RPCURL        string
+	IntentAddress string
+	MinFee        string
 }
 
 // LoadConfig loads the configuration from environment variables
@@ -114,7 +121,7 @@ func LoadConfig() (*Config, error) {
 	}
 
 	// Initialize chain configurations
-	chainConfigs := make(map[int]*chainclient.Client)
+	chainConfigs := make(map[int]ChainConfig)
 	chainConfigList, err := GetEnvChainConfigs(mainnet)
 	if err != nil {
 		return nil, err

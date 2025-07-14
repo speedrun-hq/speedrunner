@@ -10,13 +10,13 @@ import (
 
 // getTokenBalance gets the token balance for a given chain and token address
 func (s *Service) getTokenBalance(chainID int, tokenAddress common.Address) (*big.Float, error) {
-	chainConfig, exists := s.config.Chains[chainID]
+	chainClient, exists := s.chainClients[chainID]
 	if !exists {
-		return nil, fmt.Errorf("chain configuration not found for chain %d", chainID)
+		return nil, fmt.Errorf("chain client not found for chain %d", chainID)
 	}
 
 	// Create ERC20 contract instance
-	token, err := contracts.NewERC20(tokenAddress, chainConfig.Client)
+	token, err := contracts.NewERC20(tokenAddress, chainClient.Client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ERC20 contract: %v", err)
 	}
