@@ -85,6 +85,9 @@ func New(
 		return nil, fmt.Errorf("failed to connect to chain %d: %v", chainID, err)
 	}
 
+	// start fee update routine
+	client.StartFeeUpdateRoutine(15 * time.Second)
+
 	return client, nil
 }
 

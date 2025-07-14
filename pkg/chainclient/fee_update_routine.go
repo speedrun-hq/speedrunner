@@ -77,12 +77,18 @@ func (r *FeeUpdateRoutine) run() {
 	defer ticker.Stop()
 
 	// Perform initial update
-	r.updatePrices()
+	if err := r.updatePrices(); err != nil {
+		r.logger.ErrorWithChain(r.client.ChainID, "Failed to perform initial fee update: %v", err)
+		return
+	}
 
 	for {
 		select {
 		case <-ticker.C:
-			r.updatePrices()
+			if err := r.updatePrices(); err != nil {
+				r.logger.ErrorWithChain(r.client.ChainID, "Failed to perform initial fee update: %v", err)
+				return
+			}
 		case <-r.stopChan:
 			return
 		}
@@ -90,19 +96,17 @@ func (r *FeeUpdateRoutine) run() {
 }
 
 // updatePrices performs a single update of gas price, token price, and withdraw fee
-func (r *FeeUpdateRoutine) updatePrices() {
+func (r *FeeUpdateRoutine) updatePrices() error {
 	// Update gas price
 	gasPrice, err := r.client.UpdateGasPrice(r.ctx)
 	if err != nil {
-		fmt.Printf("Failed to update gas price for chain %d: %v\n", r.client.ChainID, err)
-		return
+		return fmt.Errorf("failed to update gas price: %v", err)
 	}
 
 	// Update token price
 	tokenPrice, err := getTokenPriceUSD(r.ctx, r.client.ChainID)
 	if err != nil {
-		fmt.Printf("Failed to update token price for chain %d: %v\n", r.client.ChainID, err)
-		return
+		return fmt.Errorf("failed to fetch token price for chain %d: %v", r.client.ChainID, err)
 	}
 
 	// Compute withdraw fee
@@ -114,6 +118,15 @@ func (r *FeeUpdateRoutine) updatePrices() {
 	r.client.TokenPriceUSD = tokenPrice
 	r.client.WithdrawFeeUSD = withdrawFee
 	r.client.mu.Unlock()
+
+	// Log the updated values
+	r.logger.InfoWithChain(r.client.ChainID,
+		"Updated gas price: %s, Token price: $%.2f, Withdraw fee: $%.2f",
+	)
+
+	// TODO: Implement metrics updates
+
+	return nil
 }
 
 // getTokenPriceUSD fetches the current USD price for the gas token of a specific chain
