@@ -26,8 +26,11 @@ func (s *Fulfiller) fulfillIntent(ctx context.Context, intent models.Intent) err
 	}
 
 	// Update gas price before transaction
-	finalGasPrice := chainClient.GetCurrentGasPrice()
-	if finalGasPrice == nil {
+	finalGasPrice, err := chainClient.UpdateGasPrice(ctx)
+	if err != nil {
+		s.logger.ErrorWithChain(intent.DestinationChain, "Failed to update gas price: %v", err)
+		return fmt.Errorf("failed to update gas price on %d: %v", intent.DestinationChain, err)
+	} else if finalGasPrice == nil {
 		s.logger.DebugWithChain(intent.DestinationChain, "Fetched gas price is nil")
 		// Continue with default/previous gas price
 	} else if finalGasPrice.Cmp(big.NewInt(0)) <= 0 {
