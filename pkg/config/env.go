@@ -85,7 +85,7 @@ const (
 	PolygonMainnetChainID       = 137
 	PolygonMainnetIntentAddress = "0x4017717c550E4B6E61048D412a718D6A8078d264"
 
-	DefaultPolygonMainnetRPCURL = "https://polygon-rpc.com"
+	DefaultPolygonMainnetRPCURL = "https://polygon-mainnet.public.blastapi.io"
 	DefaultPolygonMainnetMinFee = "100000"
 
 	// Ethereum
