@@ -1,6 +1,6 @@
 module github.com/speedrun-hq/speedrunner
 
-go 1.24.6
+go 1.24.4
 
 require (
 	github.com/ethereum/go-ethereum v1.15.8
