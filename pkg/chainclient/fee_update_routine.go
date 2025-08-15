@@ -174,10 +174,7 @@ func getTokenPriceUSD(ctx context.Context, chainID int) (float64, error) {
 		return 0, fmt.Errorf("failed to fetch token price: %v", err)
 	}
 	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-
-		}
+		_ = Body.Close()
 	}(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
