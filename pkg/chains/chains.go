@@ -22,8 +22,9 @@ var chainNames = map[int]string{
 	8453:  "BASE",
 }
 
-// withdrawDefaultGasLimit is the default gas limit for withdrawal transactions per chains
-var withdrawDefaultGasLimit = map[int]uint64{
+// WithdrawDefaultGasLimit is the default gas limit for withdrawal transactions per chain
+// Exposed for use by other packages
+var WithdrawDefaultGasLimit = map[int]uint64{
 	1:     400000,  // Ethereum
 	137:   400000,  // Polygon
 	42161: 1000000, // Arbitrum

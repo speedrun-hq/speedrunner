@@ -3,12 +3,13 @@ package chainclient
 import (
 	"context"
 	"fmt"
-	"github.com/speedrun-hq/speedrunner/pkg/logger"
 	"math/big"
 	"os"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/speedrun-hq/speedrunner/pkg/logger"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -141,6 +142,37 @@ func (c *Client) UpdateGasPrice(ctx context.Context) (*big.Int, error) {
 	}
 
 	return finalGasPrice, nil
+}
+
+// EffectiveGasPrice returns the suggested gas price multiplied by the client's GasMultiplier, without mutating auth
+func (c *Client) EffectiveGasPrice(ctx context.Context) (*big.Int, error) {
+	if c.Client == nil {
+		return nil, fmt.Errorf("client not connected")
+	}
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	gasPrice, err := c.Client.SuggestGasPrice(timeoutCtx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get gas price: %v", err)
+	}
+
+	multiplied := new(big.Float).Mul(new(big.Float).SetInt(gasPrice), big.NewFloat(c.GasMultiplier))
+	finalGasPrice := new(big.Int)
+	multiplied.Int(finalGasPrice)
+	return finalGasPrice, nil
+}
+
+// IsWithinMax returns true if gp <= MaxGasPrice or if MaxGasPrice is nil (no cap)
+func (c *Client) IsWithinMax(gp *big.Int) bool {
+	if gp == nil {
+		return false
+	}
+	if c.MaxGasPrice == nil {
+		return true
+	}
+	return gp.Cmp(c.MaxGasPrice) <= 0
 }
 
 // GetLatestBlockNumber gets the latest block number from the chain

@@ -36,6 +36,12 @@ func (s *Fulfiller) fulfillIntent(ctx context.Context, intent models.Intent) err
 	} else if finalGasPrice.Cmp(big.NewInt(0)) <= 0 {
 		s.logger.DebugWithChain(intent.DestinationChain, "Fetched gas price is zero or negative: %s", finalGasPrice.String())
 	} else {
+		// Guardrail: ensure we never proceed over the configured max gas price
+		if !chainClient.IsWithinMax(finalGasPrice) {
+			s.logger.ErrorWithChain(intent.DestinationChain, "Aborting fulfill: gas price too high after multiplier %s > %s", finalGasPrice.String(), chainClient.MaxGasPrice.String())
+			return fmt.Errorf("gas price %s exceeds max %s", finalGasPrice.String(), chainClient.MaxGasPrice.String())
+		}
+
 		// Update metric (convert to gwei for readability)
 		gasPriceGwei := new(big.Float).Quo(
 			new(big.Float).SetInt(finalGasPrice),
