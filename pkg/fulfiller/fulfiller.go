@@ -3,8 +3,6 @@ package fulfiller
 import (
 	"context"
 	"fmt"
-	"math/big"
-	"os"
 	"sync"
 	"time"
 
@@ -17,17 +15,6 @@ import (
 	"github.com/speedrun-hq/speedrunner/pkg/models"
 	"github.com/speedrun-hq/speedrunner/pkg/srunclient"
 )
-
-// defaultChainMaxGas defines starting per-chain gas price caps in wei
-var defaultChainMaxGas = map[int]string{
-	1:     "150000000000", // Ethereum: 150 gwei
-	137:   "100000000000", // Polygon: 100 gwei
-	42161: "5000000000",   // Arbitrum: 5 gwei
-	8453:  "5000000000",   // Base: 5 gwei
-	56:    "20000000000",  // BSC: 20 gwei
-	43114: "100000000000", // Avalanche: 100 gwei
-	7000:  "50000000000",  // ZetaChain: 50 gwei (starting point)
-}
 
 // Fulfiller handles the intent fulfillment process
 type Fulfiller struct {
@@ -63,24 +50,10 @@ func NewFulfiller(ctx context.Context, cfg *config.Config) (*Fulfiller, error) {
 			return nil, fmt.Errorf("failed to create chain client for chain %d: %v", chainConfig.ChainID, err)
 		}
 
-		// Determine per-chain MaxGasPrice override: CHAIN_<ID>_MAX_GAS_PRICE
-		var effectiveMaxGas *big.Int
-		if val := os.Getenv(fmt.Sprintf("CHAIN_%d_MAX_GAS_PRICE", chainConfig.ChainID)); val != "" {
-			if parsed, ok := new(big.Int).SetString(val, 10); ok {
-				effectiveMaxGas = parsed
-			} else {
-				stdLogger.ErrorWithChain(chainConfig.ChainID, "Invalid CHAIN_%d_MAX_GAS_PRICE '%s', falling back to global", chainConfig.ChainID, val)
-			}
-		}
-		if effectiveMaxGas == nil {
-			// Check baked-in defaults by chain
-			if def, ok := defaultChainMaxGas[chainConfig.ChainID]; ok {
-				if parsed, ok2 := new(big.Int).SetString(def, 10); ok2 {
-					effectiveMaxGas = parsed
-				}
-			}
-		}
-		if effectiveMaxGas == nil {
+		// Determine effective per-chain MaxGasPrice via config helpers
+		effectiveMaxGas, err := config.GetEnvChainMaxGasPrice(chainConfig.ChainID, cfg.MaxGasPrice)
+		if err != nil {
+			stdLogger.ErrorWithChain(chainConfig.ChainID, "Error reading per-chain max gas price: %v", err)
 			effectiveMaxGas = cfg.MaxGasPrice
 		}
 		chainClient.MaxGasPrice = effectiveMaxGas

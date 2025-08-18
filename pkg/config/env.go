@@ -121,6 +121,17 @@ const (
 	DefaultZetaChainMainnetMinFee = "100000"
 )
 
+// DefaultChainMaxGasPrice holds starting per-chain gas price caps in wei
+var DefaultChainMaxGasPrice = map[int]string{
+	1:     "10000000000", // Ethereum: 10 gwei
+	137:   "50000000000", // Polygon: 50 gwei
+	42161: "5000000000",  // Arbitrum: 5 gwei
+	8453:  "5000000000",  // Base: 5 gwei
+	56:    "10000000000", // BSC: 10 gwei
+	43114: "10000000000", // Avalanche: 10 gwei
+	7000:  "10000000000", // ZetaChain: 10 gwei (starting point)
+}
+
 // GetEnvNetwork returns the configured network from environment variables or defaults to mainnet
 func GetEnvNetwork() (string, error) {
 	network := os.Getenv("NETWORK")
@@ -312,6 +323,27 @@ func GetEnvAPIEndpoint() (string, error) {
 	return apiEndpoint, nil
 }
 
+// GetEnvMetricsAPIKey returns the API key required to access metrics, or empty if not set
+func GetEnvMetricsAPIKey() string {
+	return os.Getenv("METRICS_API_KEY")
+}
+
+// GetEnvChainGasMultiplier returns CHAIN_<ID>_GAS_MULTIPLIER if set, otherwise a sane default (1.1)
+func GetEnvChainGasMultiplier(chainID int) (float64, error) {
+	gasMultiplierStr := os.Getenv(fmt.Sprintf("CHAIN_%d_GAS_MULTIPLIER", chainID))
+	if gasMultiplierStr == "" {
+		return 1.1, nil
+	}
+	parsedMultiplier, err := strconv.ParseFloat(gasMultiplierStr, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid CHAIN_%d_GAS_MULTIPLIER value: %s", chainID, gasMultiplierStr)
+	}
+	if parsedMultiplier <= 0 {
+		return 0, fmt.Errorf("CHAIN_%d_GAS_MULTIPLIER must be greater than 0", chainID)
+	}
+	return parsedMultiplier, nil
+}
+
 // GetEnvLogLevel returns the logging level from environment variables
 func GetEnvLogLevel() (logger.Level, error) {
 	logLevel := os.Getenv("LOG_LEVEL")
@@ -348,6 +380,29 @@ func GetEnvLogColoring() (bool, error) {
 	}
 
 	return false, fmt.Errorf("invalid LOG_COLORING value: %s, must be 'true' or 'false'", logColoring)
+}
+
+// GetEnvChainMaxGasPrice returns the effective per-chain max gas price (wei),
+// using env override CHAIN_<ID>_MAX_GAS_PRICE, otherwise built-in defaults, otherwise the provided global
+func GetEnvChainMaxGasPrice(chainID int, global *big.Int) (*big.Int, error) {
+	if val := os.Getenv(fmt.Sprintf("CHAIN_%d_MAX_GAS_PRICE", chainID)); val != "" {
+		parsed := new(big.Int)
+		if _, ok := parsed.SetString(val, 10); !ok {
+			return nil, fmt.Errorf("invalid CHAIN_%d_MAX_GAS_PRICE value: %s", chainID, val)
+		}
+		if parsed.Cmp(big.NewInt(0)) < 0 {
+			return nil, fmt.Errorf("CHAIN_%d_MAX_GAS_PRICE must be >= 0", chainID)
+		}
+		return parsed, nil
+	}
+	if def, ok := DefaultChainMaxGasPrice[chainID]; ok {
+		parsed := new(big.Int)
+		if _, ok2 := parsed.SetString(def, 10); ok2 {
+			return parsed, nil
+		}
+		return nil, fmt.Errorf("failed to parse built-in default max gas price for chain %d", chainID)
+	}
+	return global, nil
 }
 
 // GetEnvChainConfigs returns the chain configurations for all supported network based on the environment variables and network type

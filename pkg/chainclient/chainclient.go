@@ -4,11 +4,10 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"os"
-	"strconv"
 	"sync"
 	"time"
 
+	"github.com/speedrun-hq/speedrunner/pkg/config"
 	"github.com/speedrun-hq/speedrunner/pkg/logger"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -61,14 +60,11 @@ func New(
 		}
 	}
 
-	// Get gas multiplier from environment, default to 1.1
-	gasMultiplierStr := os.Getenv(fmt.Sprintf("CHAIN_%d_GAS_MULTIPLIER", chainID))
-	gasMultiplier := 1.1 // default gas multiplier (10% buffer)
-	if gasMultiplierStr != "" {
-		parsedMultiplier, err := strconv.ParseFloat(gasMultiplierStr, 64)
-		if err == nil && parsedMultiplier > 0 {
-			gasMultiplier = parsedMultiplier
-		}
+	// Get gas multiplier from environment (centralized in config), default to 1.1
+	gasMultiplier, err := config.GetEnvChainGasMultiplier(chainID)
+	if err != nil {
+		logger.ErrorWithChain(chainID, "Invalid gas multiplier: %v, falling back to 1.1", err)
+		gasMultiplier = 1.1
 	}
 
 	// Connect to the chain using the provided RPC URL
