@@ -129,7 +129,7 @@ var DefaultChainMaxGasPrice = map[int]string{
 	8453:  "5000000000",  // Base: 5 gwei
 	56:    "10000000000", // BSC: 10 gwei
 	43114: "10000000000", // Avalanche: 10 gwei
-	7000:  "10000000000", // ZetaChain: 10 gwei (starting point)
+	7000:  "10000000000", // ZetaChain: 10 gwei
 }
 
 // GetEnvNetwork returns the configured network from environment variables or defaults to mainnet
