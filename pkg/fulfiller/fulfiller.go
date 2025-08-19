@@ -50,6 +50,14 @@ func NewFulfiller(ctx context.Context, cfg *config.Config) (*Fulfiller, error) {
 			return nil, fmt.Errorf("failed to create chain client for chain %d: %v", chainConfig.ChainID, err)
 		}
 
+		// Determine effective per-chain MaxGasPrice via config helpers
+		effectiveMaxGas, err := config.GetEnvChainMaxGasPrice(chainConfig.ChainID, cfg.MaxGasPrice)
+		if err != nil {
+			stdLogger.ErrorWithChain(chainConfig.ChainID, "Error reading per-chain max gas price: %v", err)
+			effectiveMaxGas = cfg.MaxGasPrice
+		}
+		chainClient.MaxGasPrice = effectiveMaxGas
+
 		chainClients[chainConfig.ChainID] = chainClient
 	}
 
@@ -219,17 +227,17 @@ func (s *Fulfiller) isGasPriceAcceptable(ctx context.Context, chainID int) bool 
 		return false
 	}
 
-	// Get current gas price
-	gasPrice, err := chainClient.Client.SuggestGasPrice(ctx)
+	// Get effective (multiplied) gas price without mutating state
+	gasPrice, err := chainClient.EffectiveGasPrice(ctx)
 	if err != nil {
 
 		s.logger.ErrorWithChain(chainID, "Error getting gas price: %v", err)
 		return false
 	}
 
-	// Check if gas price is within acceptable range
-	if chainClient.MaxGasPrice != nil && gasPrice.Cmp(chainClient.MaxGasPrice) > 0 {
-		s.logger.ErrorWithChain(chainID, "Gas price too high: %s > %s", gasPrice.String(), chainClient.MaxGasPrice.String())
+	// Check if gas price is within acceptable range after multiplier
+	if !chainClient.IsWithinMax(gasPrice) {
+		s.logger.ErrorWithChain(chainID, "Gas price too high: %s > %s (after multiplier)", gasPrice.String(), chainClient.MaxGasPrice.String())
 		return false
 	}
 

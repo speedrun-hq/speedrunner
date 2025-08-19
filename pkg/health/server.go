@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/speedrun-hq/speedrunner/pkg/chainclient"
 	"github.com/speedrun-hq/speedrunner/pkg/chains"
 	"github.com/speedrun-hq/speedrunner/pkg/circuitbreaker"
+	"github.com/speedrun-hq/speedrunner/pkg/config"
 	"github.com/speedrun-hq/speedrunner/pkg/contracts"
 	"github.com/speedrun-hq/speedrunner/pkg/logger"
 	"github.com/speedrun-hq/speedrunner/pkg/metrics"
@@ -42,7 +42,7 @@ func NewServer(
 		port:            port,
 		chains:          chains,
 		circuitBreakers: circuitBreakers,
-		metricsAPIKey:   os.Getenv("METRICS_API_KEY"),
+		metricsAPIKey:   config.GetEnvMetricsAPIKey(),
 		logger:          logger,
 	}
 }
